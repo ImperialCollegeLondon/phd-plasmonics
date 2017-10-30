@@ -226,34 +226,54 @@ def calculate_extinction(wrange, qrange, intracell, intercell):
     return results
 
 
+def fixed_q_extinction(wrange, q, intracell, intercell):
+    results = []
+    wq_vals = [(w, q, intracell, intercell) for w in wrange]
+    pool = Pool(16)
+
+    results.append(pool.map(extinction_wrap, wq_vals))
+    return results
+
+
+def extinction_cross_section(wrange, q, intracell, intercell):
+    results = fixed_q_extinction(wrange, qrange[int(resolution/2)], intracell, intercell)
+    fig, ax = plt.subplots()
+    ax.plot(wrange, results[0])
+    ax.plot([wp/np.sqrt(2), wp/np.sqrt(2)], [min(results[0]), max(results[0])], 'r--')
+    ax.set_xlabel("Frequency $\omega$ (eV)")
+    ax.set_ylabel("Extinction (a.u.)")
+    ax.set_yticks([0])
+    plt.show()
+
+
 if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 3.5  # plasma frequency
-    g = 0.02  # losses
-    trans_1 = np.array([3*a, 0])  # 1st Bravais lattice vector
-    trans_2 = np.array([3*a/2, np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
+    g = 0.01  # losses
+    scaling = 1.
+    trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
+    trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k->w conversion
 
     intracell = honeycomb(a, r, wp, g)
-    intercell = supercell(a, intracell, trans_1, trans_2, 1)[0]
+    intercell = supercell(a, intracell, trans_1, trans_2, 15)[0]
 
-    wmin = 1.75
-    wmax = 3
-    resolution = 150
+    # wmin = wp/np.sqrt(2) - 0.25
+    # wmax = wp/np.sqrt(2) + 0.25
+    wmin = 0.01
+    wmax = 5
+    resolution = 200
 
     wrange = np.linspace(wmin, wmax, resolution)
     qrange = reciprocal_space(a, resolution)
+    print(len(intercell))
+    # extinction_cross_section(wrange, qrange[int(resolution/2)], intracell, intercell)
 
-    for i in [55,75,95]:
-        test = []
-        for w in wrange:
-            test.append(np.log(np.abs(extinction(w, qrange[i], intracell, intercell))))
-        plt.plot(wrange, test)
-    plt.show()
+    # plot_interactions(intracell, supercell(a, intracell, trans_1, trans_2, 1))
 
     # raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
     #
     # reshaped_results = np.array(raw_results).reshape((resolution, resolution))
-    # plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto')
+    # plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='gray')
     # plt.show()
