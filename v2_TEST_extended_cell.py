@@ -161,6 +161,10 @@ def supercell(a, cell, t1, t2, max):
     points = []
     particles = []
 
+    # for n in np.arange(-max, max+1):
+    #     for m in np.arange(-max, max+1):
+    #         points.append(n*t1+m*t2)
+    #
     for n in np.arange(-max, max+1):
         if n < 0:
             for m in np.arange(-n-max, max+1):
@@ -251,8 +255,8 @@ if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 3.5  # plasma frequency
-    g = 0.0  # losses
-    scaling = 1.
+    g = 0.005  # losses
+    scaling = 1.0
     trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
     trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k->w conversion
@@ -260,11 +264,11 @@ if __name__ == "__main__":
     intracell = honeycomb(a, r, wp, g)
     intercell = supercell(a, intracell, trans_1, trans_2, 1)[0]
 
-    wmin = wp/np.sqrt(2) - 0.25
-    wmax = wp/np.sqrt(2) + 0.25
+    wmin = wp/np.sqrt(2) - 0.1
+    wmax = wp/np.sqrt(2) + 0.1
     # wmin = 0.01
     # wmax = 5
-    resolution = 200
+    resolution = 50
 
     wrange = np.linspace(wmin, wmax, resolution)
     qrange = reciprocal_space(a, resolution)
