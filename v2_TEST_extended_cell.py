@@ -27,6 +27,24 @@ class Particle:
         self.loss = loss
 
 
+def reciprocal_space(spacing, resolution):
+    """
+    Create set of (x,y) coordinates for path in reciprocal space.
+
+    From K to Gamma to M.
+    """
+    b = spacing * 3
+    K_Gamma_x = np.linspace((4*np.pi)/(3*b), 0, resolution/2, endpoint=False)
+    K_Gamma_y = np.zeros(int(resolution/2))
+
+    Gamma_M_x = np.zeros(int(resolution/2))
+    Gamma_M_y = np.linspace(0, (2*np.pi)/(np.sqrt(3)*b), resolution/2, endpoint=False)
+
+    q_x = np.concatenate((K_Gamma_x, Gamma_M_x))
+    q_y = np.concatenate((K_Gamma_y, Gamma_M_y))
+
+    return np.array(list(zip(q_x, q_y)))
+
 def green(k, distance):
     """
     Green's function interaction.
@@ -101,9 +119,10 @@ def interactions(intracell, intercell, w, q):
     for n in np.arange(len(intracell)):
         for m in np.arange(start=i, stop=len(intracell)):
             H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, intracell[n] - intracell[m] + inter) * np.exp(-1j * np.dot(q, (intracell[n] - intracell[m] + inter))) for inter in intercell])
+            H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, intracell[m] - intracell[n] + inter) * np.exp(-1j * np.dot(q, (intracell[m] - intracell[n] + inter))) for inter in intercell])
         i += 1
 
-    H = H + np.conjugate(H).T  # the matrix is symmetrical about the diagonal (check this)
+    #H = H + np.conjugate(H).T  # the matrix is symmetrical about the diagonal (check this)
 
     # Create the diagonal by considering interactions between same particle
     # sites but in different cells. Need to make sure to ignore the (0,0)
@@ -211,24 +230,30 @@ if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 3.5  # plasma frequency
-    g = 0.05  # losses
+    g = 0.02  # losses
     trans_1 = np.array([3*a, 0])  # 1st Bravais lattice vector
     trans_2 = np.array([3*a/2, np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k->w conversion
 
     intracell = honeycomb(a, r, wp, g)
-    intercell = supercell(a, intracell, trans_1, trans_2, 4)[0]
+    intercell = supercell(a, intracell, trans_1, trans_2, 1)[0]
 
-    wmin = 2
+    wmin = 1.75
     wmax = 3
-    resolution = 50
+    resolution = 150
 
     wrange = np.linspace(wmin, wmax, resolution)
-    qrange = [(i, 0) for i in np.linspace(-9.3*10**7, 9.3*10**7, resolution)]
+    qrange = reciprocal_space(a, resolution)
 
-    raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
-    print(len(raw_results[0]))
-
-    reshaped_results = np.array(raw_results).reshape((resolution, resolution))
-    plt.imshow(reshaped_results, origin='lower')
+    for i in [55,75,95]:
+        test = []
+        for w in wrange:
+            test.append(np.log(np.abs(extinction(w, qrange[i], intracell, intercell))))
+        plt.plot(wrange, test)
     plt.show()
+
+    # raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
+    #
+    # reshaped_results = np.array(raw_results).reshape((resolution, resolution))
+    # plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto')
+    # plt.show()
