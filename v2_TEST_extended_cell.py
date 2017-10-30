@@ -62,21 +62,22 @@ def green(k, distance):
 
     # xx type interaction
     xx_type = 0.25j * (
-    k**2 * (sp.special.hankel1(0, arg))
-    - (k/R) * sp.special.hankel1(1, arg)
-    + ((k**2 * x**2)/(2*R**2)) * (sp.special.hankel1(2, arg) - sp.special.hankel1(0, arg))
-    + ((k * x**2)/(R**3)) * sp.special.hankel1(1, arg)
-    )
+        k**2 * (sp.special.hankel1(0, arg))
+        - (k/R) * sp.special.hankel1(1, arg)
+        + ((k**2 * x**2)/(2*R**2)) * (sp.special.hankel1(2, arg) - sp.special.hankel1(0, arg))
+        + ((k * x**2)/(R**3)) * sp.special.hankel1(1, arg)
+        )
 
     # xy type interaction
     xy_type = 0.25j * sp.special.hankel1(2, arg) * ((k**2 * x*y)/(R**2))
 
     # yy type interaction
     yy_type = 0.25j * (
-    k**2 * (sp.special.hankel1(0, arg))
-    - (k/R) * sp.special.hankel1(1, arg)
-    + ((k**2 * y**2)/(2*R**2)) * (sp.special.hankel1(2, arg) - sp.special.hankel1(0, arg))
-    + ((k * y**2)/(R**3)) * sp.special.hankel1(1, arg))
+        k**2 * (sp.special.hankel1(0, arg))
+        - (k/R) * sp.special.hankel1(1, arg)
+        + ((k**2 * y**2)/(2*R**2)) * (sp.special.hankel1(2, arg) - sp.special.hankel1(0, arg))
+        + ((k * y**2)/(R**3)) * sp.special.hankel1(1, arg)
+        )
 
     return np.array([[xx_type, xy_type], [xy_type, yy_type]])
 
@@ -250,30 +251,32 @@ if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 3.5  # plasma frequency
-    g = 0.01  # losses
+    g = 0.0  # losses
     scaling = 1.
     trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
     trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k->w conversion
 
     intracell = honeycomb(a, r, wp, g)
-    intercell = supercell(a, intracell, trans_1, trans_2, 15)[0]
+    intercell = supercell(a, intracell, trans_1, trans_2, 1)[0]
 
-    # wmin = wp/np.sqrt(2) - 0.25
-    # wmax = wp/np.sqrt(2) + 0.25
-    wmin = 0.01
-    wmax = 5
+    wmin = wp/np.sqrt(2) - 0.25
+    wmax = wp/np.sqrt(2) + 0.25
+    # wmin = 0.01
+    # wmax = 5
     resolution = 200
 
     wrange = np.linspace(wmin, wmax, resolution)
     qrange = reciprocal_space(a, resolution)
-    print(len(intercell))
-    # extinction_cross_section(wrange, qrange[int(resolution/2)], intracell, intercell)
+
+    # plt.scatter([i[0] for i in intercell], [i[1] for i in intercell])
+    # plt.show()
+
+    extinction_cross_section(wrange, qrange[int(resolution/2)], intracell, intercell)
 
     # plot_interactions(intracell, supercell(a, intracell, trans_1, trans_2, 1))
 
     # raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
-    #
     # reshaped_results = np.array(raw_results).reshape((resolution, resolution))
     # plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='gray')
     # plt.show()
