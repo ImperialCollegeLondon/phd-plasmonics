@@ -36,13 +36,12 @@ class Particle:
         """
         return 1 - (self.plasma**2)/(w**2 - 1j*self.loss*w)
 
-    def getPolarisability(self, permittivity):
+    def getPolarisability(self, w):
         """
         Return the polarisability for a particle.
 
-        args:
-        - permittivity: permittivity of the particle
         """
+        permittivity = self.getPermittivity(w)
         return 2*np.pi*self.radius**2 * (permittivity - 1)/(permittivity + 1)
 
 
@@ -60,7 +59,7 @@ class Square(Particle):
         self.spacing = spacing  # Lattice constant
 
     def getUnitCell(self):
-        return self.unitcell.pos
+        return self.unitcell
 
     def getBravaisLattice(self, neighbours):
         """
@@ -114,6 +113,15 @@ class Interaction:
     Calculating interactions.
     """
 
+    def __init__(self, w, q, unit_cell, neighbours):
+        self.w_re = w[0]
+        self.w_im = w[1]
+        self.w = self.w_re + 1j*self.w_im
+        self.k = np.abs(self.w)*evc
+        self.q = q
+        self.unit_cell = unit_cell
+        self.neighbours = neighbours
+
     def green(self, k, distance):
         """
         Green's function interaction.
@@ -141,29 +149,44 @@ class Interaction:
 
         return np.array([[xx_type, xy_type], [xy_type, yy_type]])
 
-    def generateMatrix(self, w, q, unit_cell, neighbours):
-        size = len(unit_cell)
-        k = w*evc
+    def generateMatrix(self):
+        size = len(self.unit_cell.pos)
 
         if size > 1:  # for unit cells with more than 1 particle
             # initialise matrix with (size*2) since we have x and y direction
             h_matrix = np.zeros((size*2, size*2), dtype=np.complex_)
 
-            indices = np.arange(len(unit_cell))
+            indices = np.arange(size)
             for (n, m) in itertools.combinations(indices, 2):
                 # do something
                 f
         elif size == 1:  # for unit cell with single particle
-            h_matrix = sum([self.green(k, inter) *
-                            np.exp(-1j * np.dot(q, inter))
-                            for inter in neighbours])
+            h_matrix = sum([self.green(self.k, inter) *
+                            np.exp(-1j * np.dot(self.q, inter))
+                            for inter in self.neighbours])
 
         return h_matrix
 
+    def eigen_problem(self):
+        return self.generateMatrix() - np.identity(len(self.unit_cell.pos))*self.unit_cell.getPolarisability(self.w)
 
-square_lattice = Square(30*10**-9, 10*10**-9, 3.5, 0)
-qspace = square_lattice.getReciprocalLattice(50)
+    def determinant_solver(self, w):
+        self.w = w[0] + 1j*w[1]
+        return [np.linalg.det(self.eigen_problem()).real, np.linalg.det(self.eigen_problem()).imag]
 
-g = Interaction()
-mat = g.generateMatrix(2.4, qspace[1], square_lattice.getUnitCell(), square_lattice.getBravaisLattice(2))
-print(mat)
+
+square_lattice = Square(30*10**-9, 10*10**-9, 3.5, 0.01)
+qspace = square_lattice.getReciprocalLattice(60)
+
+
+wp = 3.5
+res = []
+for q in qspace:
+    g = Interaction([2.5, 0.], q, square_lattice.getUnitCell(), square_lattice.getBravaisLattice(5))
+
+    matches = []
+    for w in [wp/np.sqrt(2) +0.2, wp/np.sqrt(2)-0.2]:
+        matches.append(sp.optimize.root(g.determinant_solver, ([w, 0.]), args = (q, square_lattice.getUnitCell(), square_lattice.getBravaisLattice(5))).x)
+    res.append(matches)
+
+print([i[0][0] for i in res])
