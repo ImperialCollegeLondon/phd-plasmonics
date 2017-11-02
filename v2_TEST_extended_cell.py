@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#! python3
 
 """
 Simulating Green's functions for electromagnetic interactions in an array of
@@ -12,7 +12,7 @@ from scipy import special  # used for hankel functions
 from scipy import optimize
 from matplotlib import pyplot as plt
 from multiprocessing import Pool
-
+import itertools
 
 class Particle:
     """
@@ -26,8 +26,7 @@ class Particle:
         self.plasma = wp
         self.loss = loss
 
-
-def reciprocal_space(spacing, resolution):
+def honeycomb_reciprocal_space(spacing, resolution):
     """
     Create set of (x,y) coordinates for path in reciprocal space.
 
@@ -38,12 +37,13 @@ def reciprocal_space(spacing, resolution):
     K_Gamma_y = np.zeros(int(resolution/2))
 
     Gamma_M_x = np.zeros(int(resolution/2))
-    Gamma_M_y = np.linspace(0, (2*np.pi)/(np.sqrt(3)*b), resolution/2, endpoint=False)
+    Gamma_M_y = np.linspace(0, (2*np.pi)/(np.sqrt(3)*b), resolution/2, endpoint=True)
 
     q_x = np.concatenate((K_Gamma_x, Gamma_M_x))
     q_y = np.concatenate((K_Gamma_y, Gamma_M_y))
 
     return np.array(list(zip(q_x, q_y)))
+
 
 def green(k, distance):
     """
@@ -60,24 +60,17 @@ def green(k, distance):
     R = np.linalg.norm(distance)
     arg = k*R
 
-    # xx type interaction
-    xx_type = 0.25j * (
-        k**2 * (sp.special.hankel1(0, arg))
-        - (k/R) * sp.special.hankel1(1, arg)
-        + ((k**2 * x**2)/(2*R**2)) * (sp.special.hankel1(2, arg) - sp.special.hankel1(0, arg))
-        + ((k * x**2)/(R**3)) * sp.special.hankel1(1, arg)
-        )
+    xx_type = 0.25j * k**2 * (
+    (y**2/R**2) * sp.special.hankel1(0,arg) +
+    (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
+    )
 
-    # xy type interaction
-    xy_type = 0.25j * sp.special.hankel1(2, arg) * ((k**2 * x*y)/(R**2))
+    yy_type = 0.25j * k**2 * (
+    (x**2/R**2) * sp.special.hankel1(0,arg) -
+    (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
+    )
 
-    # yy type interaction
-    yy_type = 0.25j * (
-        k**2 * (sp.special.hankel1(0, arg))
-        - (k/R) * sp.special.hankel1(1, arg)
-        + ((k**2 * y**2)/(2*R**2)) * (sp.special.hankel1(2, arg) - sp.special.hankel1(0, arg))
-        + ((k * y**2)/(R**3)) * sp.special.hankel1(1, arg)
-        )
+    xy_type = 0.25j * k**2 * x*y/R**2 * sp.special.hankel1(2,arg)
 
     return np.array([[xx_type, xy_type], [xy_type, yy_type]])
 
@@ -101,6 +94,13 @@ def honeycomb(spacing, radius, wp, loss):
     return np.array(particle_coords)
 
 
+def square(spacing, radius, wp, loss):
+    particle_coords = []
+
+    particle_coords.append(Particle(0,0, radius, wp, loss).R)
+
+    return np.array(particle_coords)
+
 def interactions(intracell, intercell, w, q):
     """
     Interaction matrix.
@@ -116,14 +116,15 @@ def interactions(intracell, intercell, w, q):
 
     # We only need to fill 'top right' diagonal of the matrix since 'opposite
     # direction' interactions are given by the Hermitian conjugate.
-    i = 1
-    for n in np.arange(len(intracell)):
-        for m in np.arange(start=i, stop=len(intracell)):
-            H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, intracell[n] - intracell[m] + inter) * np.exp(-1j * np.dot(q, (intracell[n] - intracell[m] + inter))) for inter in intercell])
-            H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, intracell[m] - intracell[n] + inter) * np.exp(-1j * np.dot(q, (intracell[m] - intracell[n] + inter))) for inter in intercell])
-        i += 1
+
+    indices = np.arange(len(intracell))
+    for n, m in itertools.combinations(indices, 2):
+
+        H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n] + intracell[m] + inter) * np.exp(1j * np.dot(q, (-intracell[n] + intracell[m] + inter))) for inter in intercell])
+        H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -intracell[m] + intracell[n] + inter) * np.exp(1j * np.dot(q, (-intracell[m] + intracell[n] + inter))) for inter in intercell])
 
     #H = H + np.conjugate(H).T  # the matrix is symmetrical about the diagonal (check this)
+
 
     # Create the diagonal by considering interactions between same particle
     # sites but in different cells. Need to make sure to ignore the (0,0)
@@ -133,7 +134,8 @@ def interactions(intracell, intercell, w, q):
         to_sum = []
         for inter in intercell:
             if np.linalg.norm(inter) != 0:  # ignore (0,0) position
-                to_sum.append(green(k, inter) * np.exp(-1j * np.dot(q, inter)))
+                to_sum.append(green(k, inter) * np.exp(1j * np.dot(q, inter)))
+
         H[2*n:2*n+2, 2*n:2*n+2] = sum(to_sum)
     return H
 
@@ -149,7 +151,7 @@ def polar(w, wp, loss, radius):
     return 1/(static/(1 - 1j * (k**2/8) * static))
 
 
-def supercell(a, cell, t1, t2, max):
+def honeycomb_supercell(a, cell, t1, t2, max):
     """
     Create a repeated symmetrical list of points for the honeycomb lattice
     supercell structure.
@@ -180,8 +182,36 @@ def supercell(a, cell, t1, t2, max):
         for g in pos:
             particles.append(p + g)
 
-    return [points, particles]
+    return particles
 
+
+def square_supercell(a, cell, t1, t2, max):
+    particles = []
+    for n in np.arange(-max, max+1):
+        for m in np.arange(-max, max+1):
+            particles.append(n*t1 + m*t2)
+
+    return particles
+
+
+def square_reciprocal(spacing, resolution):
+    """Create set of (x,y) coordinates for path in reciprocal space.
+
+    From K to Gamma to M.
+    """
+    Gamma_X_x = np.linspace(0, np.pi/spacing, resolution/3, endpoint=False)
+    Gamma_X_y = np.zeros(int(resolution/3))
+
+    X_M_x = np.ones(int(resolution/3))*np.pi/spacing
+    X_M_y = np.linspace(0, np.pi/spacing, resolution/3, endpoint=False)
+
+    M_Gamma_x = np.linspace(np.pi/spacing, 0, resolution/3, endpoint=True)
+    M_Gamma_y = np.linspace(np.pi/spacing, 0, resolution/3, endpoint=True)
+
+    q_x = np.concatenate((Gamma_X_x, X_M_x, M_Gamma_x))
+    q_y = np.concatenate((Gamma_X_y, X_M_y, M_Gamma_y))
+
+    return np.array(list(zip(q_x, q_y)))
 
 def plot_interactions(intracell, intercell):
     """
@@ -192,14 +222,14 @@ def plot_interactions(intracell, intercell):
     to_plot = []
     for n in np.arange(len(intracell)):
         for m in np.arange(len(intracell)):
-            for inter in intercell[0]:
+            for inter in intercell:
                 point = intracell[m] + inter
                 to_plot.append([[intracell[n][0], point[0]], [intracell[n][1], point[1]]])
         i += 1
 
     for i in to_plot:  # plot interactions
         plt.plot(i[0], i[1], zorder=0, alpha=0.1, c='r')
-    for i in intercell[1]:  # plot particle locations
+    for i in intercell:  # plot particle locations
         plt.scatter(i[0], i[1], c='k', zorder=1, alpha=0.1)
     plt.show()
 
@@ -241,7 +271,7 @@ def fixed_q_extinction(wrange, q, intracell, intercell):
 
 
 def extinction_cross_section(wrange, q, intracell, intercell):
-    results = fixed_q_extinction(wrange, qrange[int(resolution/2)], intracell, intercell)
+    results = fixed_q_extinction(wrange,q, intracell, intercell)
     fig, ax = plt.subplots()
     ax.plot(wrange, results[0])
     ax.plot([wp/np.sqrt(2), wp/np.sqrt(2)], [min(results[0]), max(results[0])], 'r--')
@@ -250,37 +280,37 @@ def extinction_cross_section(wrange, q, intracell, intercell):
     ax.set_yticks([0])
     plt.show()
 
-
 if __name__ == "__main__":
-    a = 15.*10**-9  # lattice spacing
-    r = 5.*10**-9  # particle radius
-    wp = 3.5  # plasma frequency
-    g = 0.005  # losses
+    a = 30.*10**-9  # lattice spacing
+    r = 10.*10**-9  # particle radius
+    wp = 6.18  # plasma frequency
+    g = 0.02  # losses
     scaling = 1.0
-    trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
-    trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
-    ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k->w conversion
+    ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
+    c = 2.997*10**8  # speed of light
 
-    intracell = honeycomb(a, r, wp, g)
-    intercell = supercell(a, intracell, trans_1, trans_2, 1)[0]
+    #trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
+    #trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
+    #intracell = honeycomb(a, r, wp, g)
+    #intercell = honeycomb_supercell(a, intracell, trans_1, trans_2, 1)[0]
 
-    wmin = wp/np.sqrt(2) - 0.1
-    wmax = wp/np.sqrt(2) + 0.1
+    trans_1 = np.array([a,0])
+    trans_2 = np.array([0,a])
+    intracell = square(a, r, wp, g)
+    intercell = square_supercell(a, intracell, trans_1, trans_2, 2)
+
+    plot_interactions(intracell, intercell)
+
+    wmin = wp/np.sqrt(2) - 0.5
+    wmax = wp/np.sqrt(2) + 0.5
     # wmin = 0.01
-    # wmax = 5
-    resolution = 50
+    # wmax = 3
+    resolution = 100
 
     wrange = np.linspace(wmin, wmax, resolution)
     qrange = reciprocal_space(a, resolution)
 
-    # plt.scatter([i[0] for i in intercell], [i[1] for i in intercell])
-    # plt.show()
-
-    extinction_cross_section(wrange, qrange[int(resolution/2)], intracell, intercell)
-
-    # plot_interactions(intracell, supercell(a, intracell, trans_1, trans_2, 1))
-
-    # raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
-    # reshaped_results = np.array(raw_results).reshape((resolution, resolution))
-    # plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='gray')
-    # plt.show()
+    raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
+    reshaped_results = np.array(raw_results).reshape((resolution, resolution))
+    plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='gray', zorder=0)
+    plt.show()
