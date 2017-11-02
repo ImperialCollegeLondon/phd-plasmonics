@@ -170,7 +170,7 @@ class Interaction:
     def eigen_problem(self):
         return self.generateMatrix() - np.identity(len(self.unit_cell.pos))*self.unit_cell.getPolarisability(self.w)
 
-    def determinant_solver(self, w):
+    def determinant_solver(self, w, *args):
         self.w = w[0] + 1j*w[1]
         return [np.linalg.det(self.eigen_problem()).real, np.linalg.det(self.eigen_problem()).imag]
 
@@ -182,11 +182,11 @@ qspace = square_lattice.getReciprocalLattice(60)
 wp = 3.5
 res = []
 for q in qspace:
-    g = Interaction([2.5, 0.], q, square_lattice.getUnitCell(), square_lattice.getBravaisLattice(5))
 
     matches = []
     for w in [wp/np.sqrt(2) +0.2, wp/np.sqrt(2)-0.2]:
-        matches.append(sp.optimize.root(g.determinant_solver, ([w, 0.]), args = (q, square_lattice.getUnitCell(), square_lattice.getBravaisLattice(5))).x)
+        g = Interaction([w, 0.], q, square_lattice.getUnitCell(), square_lattice.getBravaisLattice(2))
+        matches.append(sp.optimize.root(g.determinant_solver, ([w, 0.])).x)
     res.append(matches)
 
 print([i[0][0] for i in res])
