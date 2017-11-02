@@ -107,7 +107,7 @@ def square_interactions(intracell, intercell, w, q):
     H = np.zeros((2, 2), dtype=np.complex_)
     k = w*ev
 
-    H = sum([green(k, inter) * np.exp(1j * np.dot(q, inter)) for inter in intercell])
+    H = sum([green(k, inter) * np.exp(-1j * np.dot(q, inter)) for inter in intercell])
     return H
 
 
@@ -210,7 +210,7 @@ def square_supercell(a, cell, t1, t2, max):
     particles = []
     for n in np.arange(-max, max+1):
         for m in np.arange(-max, max+1):
-            if n!=0 and m!=0:
+            if n != 0 or m != 0:
                 particles.append(n*t1 + m*t2)
 
     return particles
@@ -219,7 +219,7 @@ def square_supercell(a, cell, t1, t2, max):
 def square_reciprocal(spacing, resolution):
     """Create set of (x,y) coordinates for path in reciprocal space.
 
-    From K to Gamma to M.
+    From Gamma to X to M to Gamma.
     """
     Gamma_X_x = np.linspace(0, np.pi/spacing, resolution/3, endpoint=False)
     Gamma_X_y = np.zeros(int(resolution/3))
@@ -304,10 +304,22 @@ def extinction_cross_section(wrange, q, intracell, intercell):
     plt.show()
 
 
+def dispersion_relation(q, intracell, intercell, resolution, wmin, wmax):
+    print('done' + str(q))
+
+    matches = []
+    for w in [wp/np.sqrt(2) +0.2, wp/np.sqrt(2)-0.2]:
+        matches.append(sp.optimize.root(square_tosolve, ([w, 0.]), args = (intracell, intercell, q)).x)
+
+    return matches
+
+def disp_relation_wrap(args):
+    return dispersion_relation(*args)
+
 if __name__ == "__main__":
-    a = 30.*10**-9  # lattice spacing
-    r = 10.*10**-9  # particle radius
-    wp = 3.5  # plasma frequency
+    a = 15.*10**-9  # lattice spacing
+    r = 5.*10**-9  # particle radius
+    wp = 6.18  # plasma frequency
     g = 0.0  # losses
     scaling = 1.0
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
@@ -318,8 +330,8 @@ if __name__ == "__main__":
     #intracell = honeycomb(a, r, wp, g)
     #intercell = honeycomb_supercell(a, intracell, trans_1, trans_2, 1)[0]
 
-    trans_1 = np.array([a,0])
-    trans_2 = np.array([0,a])
+    trans_1 = np.array([a, 0])
+    trans_2 = np.array([0, a])
     intracell = square(a, r, wp, g)
     intercell = square_supercell(a, intracell, trans_1, trans_2, 2)
 
@@ -329,13 +341,13 @@ if __name__ == "__main__":
     wmax = wp/np.sqrt(2) + 0.5
     # wmin = 0.01
     # wmax = 3
-    resolution = 360
+    resolution = 480
 
     wrange = np.linspace(wmin, wmax, resolution, endpoint=True)
     qrange = square_reciprocal(a, resolution)
     #
     # light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    # plt.plot(light_line, zorder=1)
+    #plt.plot(light_line, zorder=1)
     # raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
     # reshaped_results = np.array(raw_results).reshape((resolution, resolution))
     # plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='hot', zorder=0)
@@ -348,25 +360,36 @@ if __name__ == "__main__":
     # print(np.amin(res))
     # plt.imshow(np.array(res[0]).reshape((resolution, resolution)))
     # plt.show()
-    fig, ax = plt.subplots(2)
-    roots = []
-    for q in qrange:
-        matches = []
-        for w in [wp/np.sqrt(2) +0.2, wp/np.sqrt(2)-0.2]:
-            matches.append(sp.optimize.root(square_tosolve, ([w, 0.]), args = (intracell, intercell, q)).x)
-        roots.append(matches)
-    print(roots)
 
+    # q = qrange[50]
+    # k = wrange[50]*ev
+    # H = [green(k, inter) * np.exp(-1j * np.dot(q, inter)) for inter in intercell]
+    #
+    # print(H[0])
+    # print(H[1])
+    # print(H[0] + H[1])
+    # print(sum([H[0], H[1]]))
+
+    res = []
+    qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
+    pool = Pool()
+    res.append(pool.map(disp_relation_wrap, qvals))
+
+
+    fig, ax = plt.subplots(2)
+    light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
+    ax[0].plot(light_line, zorder=0)
 
     for j in [0, 1]:
-        ax[0].scatter(np.arange(resolution), [i[j][0] for i in roots], s=2, c='r')
-        ax[1].scatter(np.arange(resolution), [i[j][1] for i in roots], s=2, c='b')
+        ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=2, c='r')
+        ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=2, c='b')
 
     ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
     ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
 
-    ax[0].plot([0,resolution],[wp/np.sqrt(2),wp/np.sqrt(2)],lw=1,c='g')
-    ax[1].plot([0,resolution],[0,0],lw=1,c='k')
-
+    ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
+    ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
 
     plt.show()
+
+    print(res[0])
