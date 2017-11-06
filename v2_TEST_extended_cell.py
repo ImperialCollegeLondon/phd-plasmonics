@@ -320,7 +320,7 @@ if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 6.18  # plasma frequency
-    g = 0.0  # losses
+    g = 0.08  # losses
     scaling = 1.0
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
     c = 2.997*10**8  # speed of light
@@ -337,20 +337,24 @@ if __name__ == "__main__":
 
     #plot_interactions(intracell, intercell)
 
-    wmin = wp/np.sqrt(2) - 0.5
-    wmax = wp/np.sqrt(2) + 0.5
-    # wmin = 0.01
-    # wmax = 3
-    resolution = 480
+    #wmin = wp/np.sqrt(2) - 0.5
+    #wmax = wp/np.sqrt(2) + 0.5
+    wmin = 3.25
+    wmax = 5.25
+    resolution = 240
 
     wrange = np.linspace(wmin, wmax, resolution, endpoint=True)
     qrange = square_reciprocal(a, resolution)
     #
     # light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
     #plt.plot(light_line, zorder=1)
-    # raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
-    # reshaped_results = np.array(raw_results).reshape((resolution, resolution))
-    # plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='hot', zorder=0)
+
+
+
+    raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
+    reshaped_results = np.array(raw_results).reshape((resolution, resolution))
+    plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='gray', zorder=0)
+    plt.show()
 
     # res = []
     # q = qrange[90]
@@ -370,26 +374,27 @@ if __name__ == "__main__":
     # print(H[0] + H[1])
     # print(sum([H[0], H[1]]))
 
-    res = []
-    qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
-    pool = Pool()
-    res.append(pool.map(disp_relation_wrap, qvals))
 
+    # fig, ax = plt.subplots(2)
+    # res = []
+    # qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
+    # pool = Pool()
+    # res.append(pool.map(disp_relation_wrap, qvals))
 
-    fig, ax = plt.subplots(2)
-    light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    ax[0].plot(light_line, zorder=0)
-
-    for j in [0, 1]:
-        ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=2, c='r')
-        ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=2, c='b')
-
-    ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
-    ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
-
-    ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
-    ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
-
-    plt.show()
-
-    print(res[0])
+    #
+    # light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
+    # ax[0].plot(light_line, zorder=0)
+    #
+    # for j in [0, 1]:
+    #     ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=1, c='r')
+    #     ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=1, c='b')
+    #
+    # ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
+    # ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
+    #
+    # ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
+    # ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
+    #
+    # plt.show()
+    #
+    # print(res[0])
