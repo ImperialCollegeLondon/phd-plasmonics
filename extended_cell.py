@@ -375,26 +375,26 @@ if __name__ == "__main__":
     # print(sum([H[0], H[1]]))
 
 
-    # fig, ax = plt.subplots(2)
-    # res = []
-    # qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
-    # pool = Pool()
-    # res.append(pool.map(disp_relation_wrap, qvals))
+    fig, ax = plt.subplots(2)
+    res = []
+    qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
+    pool = Pool()
+    res.append(pool.map(disp_relation_wrap, qvals))
 
-    #
-    # light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    # ax[0].plot(light_line, zorder=0)
-    #
-    # for j in [0, 1]:
-    #     ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=1, c='r')
-    #     ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=1, c='b')
-    #
-    # ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
-    # ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
-    #
-    # ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
-    # ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
-    #
-    # plt.show()
-    #
-    # print(res[0])
+
+    light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
+    ax[0].plot(light_line, zorder=0)
+
+    for j in [0, 1]:
+        ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=1, c='r')
+        ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=1, c='b')
+
+    ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
+    ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
+
+    ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
+    ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
+
+    plt.show()
+
+    print(res[0])
