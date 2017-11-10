@@ -41,9 +41,20 @@ class Particle:
         Return the polarisability for a particle.
 
         """
+        k = w * evc
         permittivity = self.getPermittivity(w)
-        return 2*np.pi*self.radius**2 * (permittivity - 1)/(permittivity + 1)
+        eps = (permittivity-1)/(permittivity+1)
+        return 2*np.pi*self.radius**2 * eps * 1/(1 - 0.25j*np.pi*(k*self.radius)**2 * eps)
 
+class Honeycomb(Particle):
+    """
+    Honeycomb lattice class.
+    """
+
+    def __init__(self, spacing, radius, wp, loss):
+        """
+        Unit cell for extended honeycomb lattice with hexagon of particles.
+        """
 
 class Square(Particle):
     """
@@ -54,7 +65,6 @@ class Square(Particle):
         """
         Unit cell for square lattice contains single particle at (0, 0).
         """
-        Particle.__init__(self, radius, wp, loss, 0, 0)
         self.unitcell = Particle(radius, wp, loss, 0, 0)
         self.spacing = spacing  # Lattice constant
 
@@ -186,20 +196,5 @@ if __name__ == '__main__':
     neighbours = square_lattice.getBravaisLattice(2)
     qspace = square_lattice.getReciprocalLattice(60)
     wp = 3.5
-    for w_test in [wp/np.sqrt(2)-0.2, wp/np.sqrt(2)+0.2]:
-        a = determinant_solver([w_test,0.], qspace, unit, neighbours)
-        plt.scatter(np.arange(60), [i[1] for i in a])
-    plt.show()
-    # res = []
-    # for q in qspace:
-    #     print(q)
-    #     matches = []
-    #     for w in [wp/np.sqrt(2) +0.2, wp/np.sqrt(2)-0.2]:
-    #         g = Interaction([w, 0.], q, square_lattice.getUnitCell(), square_lattice.getBravaisLattice(2))
-    #         matches.append(sp.optimize.root(g.determinant_solver, ([w, 0.])).x)
-    #     res.append(matches)
-    #
-    # print(len([i[1][0] for i in res]))
-    #
-    # plt.scatter(np.arange(60), [i[1][0] for i in res])
-    # plt.show()
+
+    print(square_lattice.getUnitCell().pos)

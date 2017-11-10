@@ -140,9 +140,8 @@ def interactions(intracell, intercell, w, q):
 
     indices = np.arange(len(intracell))
     for n, m in itertools.combinations(indices, 2):
-
-        H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n] + intracell[m] + inter) * np.exp(1j * np.dot(q, (-intracell[n] + intracell[m] + inter))) for inter in intercell])
-        H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -intracell[m] + intracell[n] + inter) * np.exp(1j * np.dot(q, (-intracell[m] + intracell[n] + inter))) for inter in intercell])
+        H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n] + intracell[m] + inter) * np.exp(1j * np.dot(q, -intracell[n] + intracell[m] + inter)) for inter in intercell])
+        H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -(-intracell[n] + intracell[m] + inter)) * np.exp(1j * np.dot(q, -(-intracell[n] + intracell[m] +  inter))) for inter in intercell])
 
     #H = H + np.conjugate(H).T  # the matrix is symmetrical about the diagonal (check this)
 
@@ -203,7 +202,7 @@ def honeycomb_supercell(a, cell, t1, t2, max):
         for g in pos:
             particles.append(p + g)
 
-    return particles
+    return points
 
 
 def square_supercell(a, cell, t1, t2, max):
@@ -258,13 +257,12 @@ def plot_interactions(intracell, intercell):
 
 
 def extinction(w, q, intracell, intercell):
-    print(w)
     w_plasma = wp
     loss = g
     radius = r
     k = w*ev
-
-    H_matrix = square_interactions(intracell, intercell, w, q)
+    print(w)
+    H_matrix = interactions(intracell, intercell, w, q)
     for i in range(len(H_matrix[0])):
         H_matrix[i][i] = H_matrix[i][i] - polar(w, w_plasma, loss, radius)
 
@@ -320,41 +318,43 @@ if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 6.18  # plasma frequency
-    g = 0.08  # losses
-    scaling = 1.0
+    g = 0.0  # losses
+    scaling = 1.
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
     c = 2.997*10**8  # speed of light
 
-    #trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
-    #trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
-    #intracell = honeycomb(a, r, wp, g)
-    #intercell = honeycomb_supercell(a, intracell, trans_1, trans_2, 1)[0]
+    trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
+    trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
+    intracell = honeycomb(a, r, wp, g)
+    intercell = honeycomb_supercell(a, intracell, trans_1, trans_2, 1)
 
-    trans_1 = np.array([a, 0])
-    trans_2 = np.array([0, a])
-    intracell = square(a, r, wp, g)
-    intercell = square_supercell(a, intracell, trans_1, trans_2, 2)
+    # trans_1 = np.array([a, 0])
+    # trans_2 = np.array([0, a])
+    # intracell = square(a, r, wp, g)
+    # intercell = square_supercell(a, intracell, trans_1, trans_2, 2)
+    # wmin = 3.25
+    # wmax = 5.25
+    # qrange = square_reciprocal(a, resolution)
 
     #plot_interactions(intracell, intercell)
 
-    #wmin = wp/np.sqrt(2) - 0.5
-    #wmax = wp/np.sqrt(2) + 0.5
-    wmin = 3.25
-    wmax = 5.25
-    resolution = 240
+    # wmin = wp/np.sqrt(2) - 1
+    # wmax = wp/np.sqrt(2) + 1
+    wmin = 4
+    wmax = 4.75
+    resolution = 100
 
     wrange = np.linspace(wmin, wmax, resolution, endpoint=True)
-    qrange = square_reciprocal(a, resolution)
-    #
-    # light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    #plt.plot(light_line, zorder=1)
+    qrange = honeycomb_reciprocal_space(a, resolution)
 
-
-
+    light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
+    plt.plot(light_line, zorder=1)
     raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
     reshaped_results = np.array(raw_results).reshape((resolution, resolution))
-    plt.imshow(reshaped_results, origin='lower', extent=[0, resolution, wmin, wmax], aspect='auto', cmap='gray', zorder=0)
+    plt.imshow(reshaped_results, origin='lower', extent=[0, resolution-1, wmin, wmax], aspect='auto', cmap='viridis', zorder=0)
     plt.show()
+
+####
 
     # res = []
     # q = qrange[90]
@@ -374,27 +374,28 @@ if __name__ == "__main__":
     # print(H[0] + H[1])
     # print(sum([H[0], H[1]]))
 
+####
 
-    fig, ax = plt.subplots(2)
-    res = []
-    qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
-    pool = Pool()
-    res.append(pool.map(disp_relation_wrap, qvals))
-
-
-    light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    ax[0].plot(light_line, zorder=0)
-
-    for j in [0, 1]:
-        ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=1, c='r')
-        ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=1, c='b')
-
-    ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
-    ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
-
-    ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
-    ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
-
-    plt.show()
-
-    print(res[0])
+    # fig, ax = plt.subplots(2)
+    # res = []
+    # qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
+    # pool = Pool()
+    # res.append(pool.map(disp_relation_wrap, qvals))
+    #
+    #
+    # light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
+    # ax[0].plot(light_line, zorder=0)
+    #
+    # for j in [0, 1]:
+    #     ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=1, c='r')
+    #     ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=1, c='b')
+    #
+    # ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
+    # ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
+    #
+    # ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
+    # ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
+    #
+    # plt.show()
+    #
+    # print(res[0])
