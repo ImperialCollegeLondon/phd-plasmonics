@@ -153,7 +153,7 @@ if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 6.18  # plasma frequency
-    g = 0.08  # losses
+    g = 0.05  # losses
     scaling = 1.
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
     c = 2.997*10**8  # speed of light

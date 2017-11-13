@@ -41,25 +41,76 @@ class Particle:
         return 2*np.pi*self.radius**2 * eps * 1/(1 - 0.25j*np.pi*(k*self.radius)**2 * eps)
 
 
+class SimpleHoneycomb(Particle):
+    def __init__(self, spacing, radius, wp, loss, neighbours):
+        self.spacing = spacing
+        self.wp = wp
+        self.loss = loss
+        self.neighbours = neighbours
+        Particle.__init__(self, radius, wp, loss)
+
+    def getUnitCell(self):
+        particle_list = []
+        for x, y in [(-self.spacing/2, 0), (self.spacing/2, 0)]:
+            particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
+        return particle_list
+
+    def getNeighbours(self, scaling):
+        neighbour_list = []
+        number = self.neighbours
+        t1 = np.array([scaling*1.5*self.spacing, scaling*self.spacing*np.sqrt(3)/2])
+        t2 = np.array([scaling*1.5*self.spacing, -scaling*self.spacing*np.sqrt(3)/2])
+
+        for n,m in itertools.product(np.arange(-number, number+1), repeat=2):
+            neighbour_list.append(n*t1 + m*t2)
+
+        return neighbour_list
+
+    def getReciprocalLattice(self, size):
+        """
+        Create set of (x,y) coordinates for path in reciprocal space.
+
+        From K to Gamma to M
+        """
+        b = self.spacing * 3
+        Gamma_K_x = np.zeros(int(size/2))
+        Gamma_K_y = np.linspace(0, (4*np.pi)/(np.sqrt(3)*b), size/2, endpoint = False)
+
+        K_M_x = np.linspace(0, (2*np.pi)/b, size/2, endpoint = True)
+        K_M_y = np.linspace((4*np.pi)/(np.sqrt(3)*b), 0, size/2, endpoint = True)
+
+        # K_Gamma_x = np.zeros(int(size/2))
+        # K_Gamma_y = np.linspace((4*np.pi)/(np.sqrt(3)*b), 0, size/2, endpoint = False)
+        #
+        # Gamma_M_x = np.linspace(0, (2*np.pi)/b, size/2, endpoint = True)
+        # Gamma_M_y = np.zeros(int(size/2))
+
+        q_x = np.concatenate((Gamma_K_x, K_M_x))
+        q_y = np.concatenate((Gamma_K_y, K_M_y))
+
+        return np.array(list(zip(q_x, q_y)))
+
+
 class Honeycomb(Particle):
-    def __init__(self, spacing, radius, wp, loss):
+    def __init__(self, spacing, radius, wp, loss, neighbours):
         self.spacing = spacing
         self.wp = wp
         self.loss = loss
         Particle.__init__(self, radius, wp, loss)
 
-    def getExtendedCell(self):
+    def getUnitCell(self):
         particle_list = []
         for x, y in [(self.spacing, 0), (self.spacing*0.5, -self.spacing*np.sqrt(3)/2), (-self.spacing*0.5, -self.spacing*np.sqrt(3)/2), (-self.spacing, 0), (-self.spacing*0.5, self.spacing*np.sqrt(3)/2), (self.spacing*0.5, self.spacing*np.sqrt(3)/2)]:
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
         return particle_list
 
-    def getSupercells(self, number, scaling):
+    def getNeighbours(self, scaling):
         """
         Create a repeated symmetrical list of points for the honeycomb lattice
         supercell structure. Returns a list of supercell positions (points).
         """
         points = []
+        number = self.neighbours
 
         b = 3 * self.spacing
 
@@ -98,6 +149,46 @@ class Honeycomb(Particle):
         return np.array(list(zip(q_x, q_y)))
 
 
+class Extinction:
+    def __init__(self, cell, resolution, wmin, wmax):
+        self.cell = cell
+        self.wmin = wmin
+        self.wmax = wmax
+        self.resolution = resolution
+        self.wrange = np.linspace(wmin, wmax, self.resolution, endpoint=True)
+        self.qrange = cell.getReciprocalLattice(self.resolution)
+
+    def calcExtinction(self, w, q):
+        print(w)
+        k = w*ev
+        H_matrix = calculateInteraction(self.cell, w, q)
+        for i in range(len(H_matrix[0])):
+            H_matrix[i][i] = H_matrix[i][i] - 1/self.cell.getPolarisability(w)
+
+        return 4*np.pi*k*(sum(1/sp.linalg.eigvals(H_matrix)).imag)
+
+    def _calcExtinction(self, args):
+        return self.calcExtinction(*args)
+
+    def loopExtinction(self):
+        results = []
+        wq_vals = [(w, q) for w in self.wrange for q in self.qrange]
+        pool = Pool()
+
+        results.append(pool.map(self._calcExtinction, wq_vals))
+        return results
+
+    def plotExtinction(self):
+        light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(self.qrange)]
+        plt.plot(light_line, 'r--', zorder=1, alpha=0.5)
+
+        raw_results = self.loopExtinction()
+        reshaped_results = np.array(raw_results).reshape((self.resolution, self.resolution))
+        plt.imshow(reshaped_results, origin='lower', extent=[0, self.resolution-1, self.wmin, self.wmax], aspect='auto', cmap='viridis', zorder=0)
+
+        plt.show()
+
+
 def green(k, distance):
     """
     Green's function interaction.
@@ -131,8 +222,8 @@ def green(k, distance):
 def calculateInteraction(cell, w, q):
     k = w*ev
 
-    intracell = cell.getExtendedCell()
-    intercell = cell.getSupercells(1, 1)
+    intracell = cell.getUnitCell()
+    intercell = cell.getNeighbours(1)
     indices = np.arange(len(intracell))
 
     matrix_size = len(intracell)*2
@@ -151,59 +242,21 @@ def calculateInteraction(cell, w, q):
         H[2*n:2*n+2, 2*n:2*n+2] = sum(to_sum)
     return H
 
-def extinction(w, q, cell):
-    print(w)
-    k = w*ev
-    H_matrix = calculateInteraction(cell, w, q)
-    for i in range(len(H_matrix[0])):
-        H_matrix[i][i] = H_matrix[i][i] - 1/cell.getPolarisability(w)
-
-    return 4*np.pi*k*(sum(1/sp.linalg.eigvals(H_matrix)).imag)
-
-
-def extinction_wrap(args):
-    return extinction(*args)
-
-
-def calculate_extinction(wrange, qrange, cell):
-    results = []
-    wq_vals = [(w, q, cell) for w in wrange for q in qrange]
-    pool = Pool(16)
-
-    results.append(pool.map(extinction_wrap, wq_vals))
-    return results
-
-
-def plot_extinction(wrange, qrange, cell, resolution):
-    light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    plt.plot(light_line, 'r--', zorder=1, alpha=0.5)
-
-    raw_results = calculate_extinction(wrange, qrange, cell)
-    reshaped_results = np.array(raw_results).reshape((resolution, resolution))
-    plt.imshow(reshaped_results, origin='lower', extent=[0, resolution-1, wmin, wmax], aspect='auto', cmap='viridis', zorder=0)
-
-    plt.show()
-
 
 if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 6.18  # plasma frequency
-    g = 0.0  # losses
-    scaling = 1.0
+    g = 0.08  # losses
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
     c = 2.997*10**8  # speed of light
+    wmin = wp/np.sqrt(2) - 1.
+    wmax = wp/np.sqrt(2) + 1.
+    resolution = 200
 
-    lattice = Honeycomb(a, r, wp, g)
-    # intracell = lattice.getExtendedCell()
-    # intercell = lattice.getSupercells(1, 1)
-
-    wmin = wp/np.sqrt(2) - 0.5
-    wmax = wp/np.sqrt(2) + 0.5
-
-    resolution = 50
-
-    wrange = np.linspace(wmin, wmax, resolution, endpoint=True)
-    qrange = lattice.getReciprocalLattice(resolution)
-
-    plot_extinction(wrange, qrange, lattice, resolution)
+    lattice = SimpleHoneycomb(a, r, wp, g, 1)
+    Extinction(lattice, resolution, wmin, wmax).plotExtinction()
+    # plt.scatter([i.pos[0] for i in lattice.getUnitCell()], [i.pos[1] for i in lattice.getUnitCell()])
+    # plt.scatter([i[0] for i in lattice.getNeighbours(1)], [i[1] for i in lattice.getNeighbours(1)])
+    #
+    # plt.show()
