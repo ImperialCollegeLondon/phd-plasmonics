@@ -41,9 +41,73 @@ class Particle:
         return 2*np.pi*self.radius**2 * eps * 1/(1 - 0.25j*np.pi*(k*self.radius)**2 * eps)
 
 
-class SimpleHoneycomb(Particle):
-    def __init__(self, spacing, radius, wp, loss, neighbours):
+class Square(Particle):
+    """
+    Square lattice class.
+    """
+
+    def __init__(self, spacing, radius, wp, loss, neighbours, scaling):
         self.spacing = spacing
+        self.scaling = scaling
+        self.wp = wp
+        self.loss = loss
+        self.neighbours = neighbours
+        Particle.__init__(self, radius, wp, loss)
+
+    def getUnitCell(self):
+        return [(0, 0)]
+
+    def getNeighbours(self):
+        """
+        Function to create square lattice structure, ignoring the origin.
+
+        args:
+        - neighbours: number of neighbours to create in each primitive lattice
+        vector direction.
+        """
+        t1 = np.array([0, self.scaling*self.spacing])
+        t2 = np.array([self.scaling*self.spacing, 0])
+
+        lattice_points = []
+        lattice_range = np.arange(-self.neighbours, self.neighbours+1)
+        for (i, j) in itertools.product(lattice_range, repeat=2):
+            if i != 0 or j != 0:  # ignore the origin
+                lattice_points.append(i*t1 + j*t2)
+
+        return np.array(lattice_points)
+
+    def getReciprocalLattice(self, size):
+        """
+        Generate set of reciprocal lattice points from
+        Gamma to X to M to Gamma.
+
+        args:
+        - number: number of points to create
+        """
+
+        Gamma_X_x = np.linspace(0, np.pi/self.spacing, size/3,
+                                endpoint=False)
+        Gamma_X_y = np.zeros(int(size/3))
+
+        X_M_x = np.ones(int(size/3))*np.pi/self.spacing
+        X_M_y = np.linspace(0, np.pi/self.spacing, size/3, endpoint=False)
+
+        M_Gamma_x = np.linspace(np.pi/self.spacing, 0, size/3, endpoint=True)
+        M_Gamma_y = np.linspace(np.pi/self.spacing, 0, size/3, endpoint=True)
+
+        q_x = np.concatenate((Gamma_X_x, X_M_x, M_Gamma_x))
+        q_y = np.concatenate((Gamma_X_y, X_M_y, M_Gamma_y))
+
+        return np.array(list(zip(q_x, q_y)))
+
+    def getCellSize(self):
+        return 1
+
+
+class SimpleHoneycomb(Particle):
+    def __init__(self, spacing, radius, wp, loss, neighbours, scaling):
+        self.spacing = spacing
+        self.scaling = scaling
         self.wp = wp
         self.loss = loss
         self.neighbours = neighbours
@@ -55,11 +119,11 @@ class SimpleHoneycomb(Particle):
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
         return particle_list
 
-    def getNeighbours(self, scaling):
+    def getNeighbours(self):
         neighbour_list = []
         number = self.neighbours
-        t1 = np.array([scaling*1.5*self.spacing, scaling*self.spacing*np.sqrt(3)/2])
-        t2 = np.array([scaling*1.5*self.spacing, -scaling*self.spacing*np.sqrt(3)/2])
+        t1 = np.array([self.scaling*1.5*self.spacing, self.scaling*self.spacing*np.sqrt(3)/2])
+        t2 = np.array([self.scaling*1.5*self.spacing, -self.scaling*self.spacing*np.sqrt(3)/2])
 
         for n,m in itertools.product(np.arange(-number, number+1), repeat=2):
             neighbour_list.append(n*t1 + m*t2)
@@ -72,28 +136,26 @@ class SimpleHoneycomb(Particle):
 
         From K to Gamma to M
         """
-        b = self.spacing * 3
+        b = self.spacing * 3 * self.scaling
         Gamma_K_x = np.zeros(int(size/2))
         Gamma_K_y = np.linspace(0, (4*np.pi)/(np.sqrt(3)*b), size/2, endpoint = False)
 
         K_M_x = np.linspace(0, (2*np.pi)/b, size/2, endpoint = True)
         K_M_y = np.linspace((4*np.pi)/(np.sqrt(3)*b), 0, size/2, endpoint = True)
 
-        # K_Gamma_x = np.zeros(int(size/2))
-        # K_Gamma_y = np.linspace((4*np.pi)/(np.sqrt(3)*b), 0, size/2, endpoint = False)
-        #
-        # Gamma_M_x = np.linspace(0, (2*np.pi)/b, size/2, endpoint = True)
-        # Gamma_M_y = np.zeros(int(size/2))
-
         q_x = np.concatenate((Gamma_K_x, K_M_x))
         q_y = np.concatenate((Gamma_K_y, K_M_y))
 
         return np.array(list(zip(q_x, q_y)))
 
+    def getCellSize(self):
+        return 2
 
 class Honeycomb(Particle):
-    def __init__(self, spacing, radius, wp, loss, neighbours):
+    def __init__(self, spacing, radius, wp, loss, neighbours, scaling):
         self.spacing = spacing
+        self.scaling = scaling
+        self.neighbours = neighbours
         self.wp = wp
         self.loss = loss
         Particle.__init__(self, radius, wp, loss)
@@ -104,7 +166,7 @@ class Honeycomb(Particle):
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
         return particle_list
 
-    def getNeighbours(self, scaling):
+    def getNeighbours(self):
         """
         Create a repeated symmetrical list of points for the honeycomb lattice
         supercell structure. Returns a list of supercell positions (points).
@@ -112,10 +174,10 @@ class Honeycomb(Particle):
         points = []
         number = self.neighbours
 
-        b = 3 * self.spacing
+        b = 3 * self.spacing * self.scaling
 
-        t1 = np.array([scaling*b, 0])  # 1st Bravais lattice vector
-        t2 = np.array([scaling*b/2, scaling*np.sqrt(3)*b/2])  # 2nd Bravais lattice vector
+        t1 = np.array([b, 0])  # 1st Bravais lattice vector
+        t2 = np.array([b/2, np.sqrt(3)*b/2])  # 2nd Bravais lattice vector
 
         for n in np.arange(-number, number+1):
             if n < 0:
@@ -136,7 +198,7 @@ class Honeycomb(Particle):
 
         From K to Gamma to M.
         """
-        b = self.spacing * 3
+        b = 3* self.spacing * self.scaling
         K_Gamma_x = np.linspace((4*np.pi)/(3*b), 0, size/2, endpoint=False)
         K_Gamma_y = np.zeros(int(size/2))
 
@@ -147,6 +209,9 @@ class Honeycomb(Particle):
         q_y = np.concatenate((K_Gamma_y, Gamma_M_y))
 
         return np.array(list(zip(q_x, q_y)))
+
+    def getCellSize(self):
+        return 6
 
 
 class Extinction:
@@ -223,23 +288,29 @@ def calculateInteraction(cell, w, q):
     k = w*ev
 
     intracell = cell.getUnitCell()
-    intercell = cell.getNeighbours(1)
-    indices = np.arange(len(intracell))
+    intercell = cell.getNeighbours()
+    cell_size = cell.getCellSize()
+    indices = np.arange(cell_size)
 
-    matrix_size = len(intracell)*2
+    matrix_size = cell_size*2
 
-    H = np.zeros((matrix_size, matrix_size), dtype=np.complex_)
+    if cell_size == 1:
+        H = sum([green(w, inter) * np.exp(-1j * np.dot(q, inter)) for inter in intercell])
 
-    for n, m in itertools.combinations(indices, 2):
-        H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n].pos + intracell[m].pos + inter) * np.exp(1j * np.dot(q, -intracell[n].pos + intracell[m].pos + inter)) for inter in intercell])
-        H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -(-intracell[n].pos + intracell[m].pos + inter)) * np.exp(1j * np.dot(q, -(-intracell[n].pos + intracell[m].pos +  inter))) for inter in intercell])
+    else:
+        H = np.zeros((matrix_size, matrix_size), dtype=np.complex_)
 
-    for n in indices:
-        to_sum = []
-        for inter in intercell:
-            if np.linalg.norm(inter) != 0:  # ignore (0,0) position
-                to_sum.append(green(k, inter) * np.exp(1j * np.dot(q, inter)))
-        H[2*n:2*n+2, 2*n:2*n+2] = sum(to_sum)
+        for n, m in itertools.combinations(indices, 2):
+            H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n].pos + intracell[m].pos + inter) * np.exp(1j * np.dot(q, -intracell[n].pos + intracell[m].pos + inter)) for inter in intercell])
+            H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -(-intracell[n].pos + intracell[m].pos + inter)) * np.exp(1j * np.dot(q, -(-intracell[n].pos + intracell[m].pos +  inter))) for inter in intercell])
+
+        for n in indices:
+            to_sum = []
+            for inter in intercell:
+                if np.linalg.norm(inter) != 0:  # ignore (0,0) position
+                    to_sum.append(green(k, inter) * np.exp(1j * np.dot(q, inter)))
+            H[2*n:2*n+2, 2*n:2*n+2] = sum(to_sum)
+
     return H
 
 
@@ -252,10 +323,11 @@ if __name__ == "__main__":
     c = 2.997*10**8  # speed of light
     wmin = wp/np.sqrt(2) - 1.
     wmax = wp/np.sqrt(2) + 1.
-    resolution = 200
+    resolution = 120
 
-    lattice = SimpleHoneycomb(a, r, wp, g, 1)
+    lattice = Square(a, r, wp, g, neighbours=20, scaling=1)
     Extinction(lattice, resolution, wmin, wmax).plotExtinction()
+
     # plt.scatter([i.pos[0] for i in lattice.getUnitCell()], [i.pos[1] for i in lattice.getUnitCell()])
     # plt.scatter([i[0] for i in lattice.getNeighbours(1)], [i[1] for i in lattice.getNeighbours(1)])
     #
