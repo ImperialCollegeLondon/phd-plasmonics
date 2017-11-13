@@ -3,12 +3,11 @@
 Simulating Green's function interactions in plasmonic lattices.
 
 ## TODO
-- [] Implement convergence results
-- [] Complex root solver
+- [ ] Implement convergence results for lattice sums
+- [x] Complex root solver (kind of, for the square lattice)
+- [x] Better complex root solver
+- [ ] Multiprocessing for lattice sums
 
 ## Other TODO
-- [] Clean up code
-- [] Documentation
-
-
-
+- [ ] Clean up code
+- [ ] Documentation
