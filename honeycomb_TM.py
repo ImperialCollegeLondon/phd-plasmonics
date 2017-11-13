@@ -22,6 +22,25 @@ class Particle:
         self.loss = loss
 
 
+def honeycomb(spacing, radius, wp, loss):
+    """
+    Honeycomb lattice.
+
+    Create a honeycomb lattice with specific lattice spacing. Also define
+    radii, plasma frequency and loss of particles in the lattice.
+    """
+    particle_coords = []
+
+    particle_coords.append(Particle(spacing, 0, radius, wp, loss).R)
+    particle_coords.append(Particle(spacing*0.5, -spacing*np.sqrt(3)/2, radius, wp, loss).R)
+    particle_coords.append(Particle(-spacing*0.5, -spacing*np.sqrt(3)/2, radius, wp, loss).R)
+    particle_coords.append(Particle(-spacing, 0, radius, wp, loss).R)
+    particle_coords.append(Particle(-spacing*0.5, spacing*np.sqrt(3)/2, radius, wp, loss).R)
+    particle_coords.append(Particle(spacing*0.5, spacing*np.sqrt(3)/2, radius, wp, loss).R)
+
+    return np.array(particle_coords)
+
+
 def honeycomb_reciprocal_space(spacing, resolution):
     """
     Create set of (x,y) coordinates for path in reciprocal space.
@@ -53,25 +72,6 @@ def green(k, distance):
     result = 0.25j * k**2 * sp.special.hankel1(0, arg)
 
     return result
-
-
-def honeycomb(spacing, radius, wp, loss):
-    """
-    Honeycomb lattice.
-
-    Create a honeycomb lattice with specific lattice spacing. Also define
-    radii, plasma frequency and loss of particles in the lattice.
-    """
-    particle_coords = []
-
-    particle_coords.append(Particle(spacing, 0, radius, wp, loss).R)
-    particle_coords.append(Particle(spacing*0.5, -spacing*np.sqrt(3)/2, radius, wp, loss).R)
-    particle_coords.append(Particle(-spacing*0.5, -spacing*np.sqrt(3)/2, radius, wp, loss).R)
-    particle_coords.append(Particle(-spacing, 0, radius, wp, loss).R)
-    particle_coords.append(Particle(-spacing*0.5, spacing*np.sqrt(3)/2, radius, wp, loss).R)
-    particle_coords.append(Particle(spacing*0.5, spacing*np.sqrt(3)/2, radius, wp, loss).R)
-
-    return np.array(particle_coords)
 
 
 def honeycomb_supercell(t1, t2, max):
@@ -118,7 +118,7 @@ def polar(w, wp, loss, radius):
     k = w*ev
     eps = 1 - (wp**2)/(w**2 + 1j*loss*w)
     static = np.pi*radius**2 * (eps - 1)
-    result = static/(1 - 0.25j * np.pi * (k*radius)**2 * (eps-1))
+    result = static/(1 - 0.25j * (radius**2 * k**2) * ((eps-1)/(eps+1)))
 
     return result
 

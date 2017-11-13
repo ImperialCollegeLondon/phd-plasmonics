@@ -15,49 +15,87 @@ class Particle:
 
     Each particle has a position, radius, plasma frequency and loss.
     """
-    def __init__(self, x_pos, y_pos, radius, wp, loss):
-        self.R = np.array([x_pos, y_pos])
+    def __init__(self, radius, wp, loss, x_pos=0, y_pos=0):
+        self.pos = np.array([x_pos, y_pos])
         self.radius = radius
         self.plasma = wp
         self.loss = loss
 
+    def getPermittivity(self, w):
+        """
+        Return permittivity for a particle.
 
-def honeycomb(spacing, radius, wp, loss):
-    """
-    Honeycomb lattice.
+        args:
+        - w: frequency (eV)
+        """
+        return 1 - (self.plasma**2)/(w**2 - 1j*self.loss*w)
 
-    Create a honeycomb lattice with specific lattice spacing. Also define
-    radii, plasma frequency and loss of particles in the lattice.
-    """
-    particle_coords = []
+    def getPolarisability(self, w):
+        """
+        Return the polarisability for a particle.
 
-    particle_coords.append(Particle(spacing, 0, radius, wp, loss).R)
-    particle_coords.append(Particle(spacing*0.5, -spacing*np.sqrt(3)/2, radius, wp, loss).R)
-    particle_coords.append(Particle(-spacing*0.5, -spacing*np.sqrt(3)/2, radius, wp, loss).R)
-    particle_coords.append(Particle(-spacing, 0, radius, wp, loss).R)
-    particle_coords.append(Particle(-spacing*0.5, spacing*np.sqrt(3)/2, radius, wp, loss).R)
-    particle_coords.append(Particle(spacing*0.5, spacing*np.sqrt(3)/2, radius, wp, loss).R)
-
-    return np.array(particle_coords)
+        """
+        k = w * ev
+        permittivity = self.getPermittivity(w)
+        eps = (permittivity-1)/(permittivity+1)
+        return 2*np.pi*self.radius**2 * eps * 1/(1 - 0.25j*np.pi*(k*self.radius)**2 * eps)
 
 
-def honeycomb_reciprocal_space(spacing, resolution):
-    """
-    Create set of (x,y) coordinates for path in reciprocal space.
+class Honeycomb(Particle):
+    def __init__(self, spacing, radius, wp, loss):
+        self.spacing = spacing
+        self.wp = wp
+        self.loss = loss
+        Particle.__init__(self, radius, wp, loss)
 
-    From K to Gamma to M.
-    """
-    b = spacing * 3
-    K_Gamma_x = np.linspace((4*np.pi)/(3*b), 0, resolution/2, endpoint=False)
-    K_Gamma_y = np.zeros(int(resolution/2))
+    def getExtendedCell(self):
+        particle_list = []
+        for x, y in [(self.spacing, 0), (self.spacing*0.5, -self.spacing*np.sqrt(3)/2), (-self.spacing*0.5, -self.spacing*np.sqrt(3)/2), (-self.spacing, 0), (-self.spacing*0.5, self.spacing*np.sqrt(3)/2), (self.spacing*0.5, self.spacing*np.sqrt(3)/2)]:
+            particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
+        return particle_list
 
-    Gamma_M_x = np.zeros(int(resolution/2))
-    Gamma_M_y = np.linspace(0, (2*np.pi)/(np.sqrt(3)*b), resolution/2, endpoint=True)
+    def getSupercells(self, number, scaling):
+        """
+        Create a repeated symmetrical list of points for the honeycomb lattice
+        supercell structure. Returns a list of supercell positions (points).
+        """
+        points = []
 
-    q_x = np.concatenate((K_Gamma_x, Gamma_M_x))
-    q_y = np.concatenate((K_Gamma_y, Gamma_M_y))
+        b = 3 * self.spacing
 
-    return np.array(list(zip(q_x, q_y)))
+        t1 = np.array([scaling*b, 0])  # 1st Bravais lattice vector
+        t2 = np.array([scaling*b/2, scaling*np.sqrt(3)*b/2])  # 2nd Bravais lattice vector
+
+        for n in np.arange(-number, number+1):
+            if n < 0:
+                for m in np.arange(-n-number, number+1):
+                    points.append(n*t1+m*t2)
+            elif n > 0:
+                for m in np.arange(-number, number-n+1):
+                    points.append(n*t1+m*t2)
+            elif n == 0:
+                for m in np.arange(-number, number+1):
+                    points.append(n*t1+m*t2)
+
+        return points
+
+    def getReciprocalLattice(self, size):
+        """
+        Create set of (x,y) coordinates for path in reciprocal space.
+
+        From K to Gamma to M.
+        """
+        b = self.spacing * 3
+        K_Gamma_x = np.linspace((4*np.pi)/(3*b), 0, size/2, endpoint=False)
+        K_Gamma_y = np.zeros(int(size/2))
+
+        Gamma_M_x = np.zeros(int(size/2))
+        Gamma_M_y = np.linspace(0, (2*np.pi)/(np.sqrt(3)*b), size/2, endpoint=True)
+
+        q_x = np.concatenate((K_Gamma_x, Gamma_M_x))
+        q_y = np.concatenate((K_Gamma_y, Gamma_M_y))
+
+        return np.array(list(zip(q_x, q_y)))
 
 
 def green(k, distance):
@@ -90,54 +128,22 @@ def green(k, distance):
     return np.array([[xx_type, xy_type], [xy_type, yy_type]])
 
 
-def honeycomb_supercell(t1, t2, max):
-    """
-    Create a repeated symmetrical list of points for the honeycomb lattice
-    supercell structure. Returns a list of supercell positions (points).
-    """
-    points = []
-
-    for n in np.arange(-max, max+1):
-        if n < 0:
-            for m in np.arange(-n-max, max+1):
-                points.append(n*t1+m*t2)
-        elif n > 0:
-            for m in np.arange(-max, max-n+1):
-                points.append(n*t1+m*t2)
-        elif n == 0:
-            for m in np.arange(-max, max+1):
-                points.append(n*t1+m*t2)
-
-    return points
-
-
-def interactions(intracell, intercell, w, q):
-    """
-    Interaction matrix.
-
-    Find the matrix of interactions for a 6 site unit cell system. Interactions
-    are both between particle in the same cell (INTRAcell) and between
-    particles in different cells (INTERcell). Calculated at a particular
-    frequency omega (w) and Bloch wavenumber (q).
-    """
-    H = np.zeros((12, 12), dtype=np.complex_)
-
+def calculateInteraction(cell, w, q):
     k = w*ev
 
-    # We only need to fill 'top right' diagonal of the matrix since 'opposite
-    # direction' interactions are given by the Hermitian conjugate.
-
+    intracell = cell.getExtendedCell()
+    intercell = cell.getSupercells(1, 1)
     indices = np.arange(len(intracell))
+
+    matrix_size = len(intracell)*2
+
+    H = np.zeros((matrix_size, matrix_size), dtype=np.complex_)
+
     for n, m in itertools.combinations(indices, 2):
-        H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n] + intracell[m] + inter) * np.exp(1j * np.dot(q, -intracell[n] + intracell[m] + inter)) for inter in intercell])
-        H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -(-intracell[n] + intracell[m] + inter)) * np.exp(1j * np.dot(q, -(-intracell[n] + intracell[m] +  inter))) for inter in intercell])
+        H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n].pos + intracell[m].pos + inter) * np.exp(1j * np.dot(q, -intracell[n].pos + intracell[m].pos + inter)) for inter in intercell])
+        H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -(-intracell[n].pos + intracell[m].pos + inter)) * np.exp(1j * np.dot(q, -(-intracell[n].pos + intracell[m].pos +  inter))) for inter in intercell])
 
-
-    # Create the diagonal by considering interactions between same particle
-    # sites but in different cells. Need to make sure to ignore the (0,0)
-    # element in intercell to prevent issues with the Green's function as we
-    # have no 'self interaction'.
-    for n in np.arange(len(intracell)):
+    for n in indices:
         to_sum = []
         for inter in intercell:
             if np.linalg.norm(inter) != 0:  # ignore (0,0) position
@@ -145,27 +151,12 @@ def interactions(intracell, intercell, w, q):
         H[2*n:2*n+2, 2*n:2*n+2] = sum(to_sum)
     return H
 
-
-def polar(w, wp, loss, radius):
-    """Polarisability function.
-
-    Dynamic polarisability for infinite cylinder.
-    """
-    k = w*ev
-    eps = 1 - (wp**2)/(w**2 + 1j*loss*w)
-    static = 2 * np.pi * radius**2 * ((eps-1)/(eps+1))
-    return static/(1 - 0.25j * (radius**2 * k**2) * ((eps-1)/(eps+1)))
-
-
-def extinction(w, q, intracell, intercell):
-    w_plasma = wp
-    loss = g
-    radius = r
-    k = w*ev
+def extinction(w, q, cell):
     print(w)
-    H_matrix = interactions(intracell, intercell, w, q)
+    k = w*ev
+    H_matrix = calculateInteraction(cell, w, q)
     for i in range(len(H_matrix[0])):
-        H_matrix[i][i] = H_matrix[i][i] - 1/polar(w, w_plasma, loss, radius)
+        H_matrix[i][i] = H_matrix[i][i] - 1/cell.getPolarisability(w)
 
     return 4*np.pi*k*(sum(1/sp.linalg.eigvals(H_matrix)).imag)
 
@@ -174,20 +165,20 @@ def extinction_wrap(args):
     return extinction(*args)
 
 
-def calculate_extinction(wrange, qrange, intracell, intercell):
+def calculate_extinction(wrange, qrange, cell):
     results = []
-    wq_vals = [(w, q, intracell, intercell) for w in wrange for q in qrange]
+    wq_vals = [(w, q, cell) for w in wrange for q in qrange]
     pool = Pool(16)
 
     results.append(pool.map(extinction_wrap, wq_vals))
     return results
 
 
-def plot_extinction(wrange, qrange, intracell, intercell, t1, t2, resolution):
+def plot_extinction(wrange, qrange, cell, resolution):
     light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    plt.plot(light_line, 'r--', zorder = 1, alpha = 0.5)
+    plt.plot(light_line, 'r--', zorder=1, alpha=0.5)
 
-    raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
+    raw_results = calculate_extinction(wrange, qrange, cell)
     reshaped_results = np.array(raw_results).reshape((resolution, resolution))
     plt.imshow(reshaped_results, origin='lower', extent=[0, resolution-1, wmin, wmax], aspect='auto', cmap='viridis', zorder=0)
 
@@ -199,21 +190,20 @@ if __name__ == "__main__":
     r = 5.*10**-9  # particle radius
     wp = 6.18  # plasma frequency
     g = 0.0  # losses
-    scaling = 1.05
+    scaling = 1.0
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
     c = 2.997*10**8  # speed of light
 
-    trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
-    trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
-    intracell = honeycomb(a, r, wp, g)
-    intercell = honeycomb_supercell(trans_1, trans_2, 1)
+    lattice = Honeycomb(a, r, wp, g)
+    # intracell = lattice.getExtendedCell()
+    # intercell = lattice.getSupercells(1, 1)
 
     wmin = wp/np.sqrt(2) - 0.5
     wmax = wp/np.sqrt(2) + 0.5
 
-    resolution = 100
+    resolution = 50
 
     wrange = np.linspace(wmin, wmax, resolution, endpoint=True)
-    qrange = honeycomb_reciprocal_space(a, resolution)
+    qrange = lattice.getReciprocalLattice(resolution)
 
-    plot_extinction(wrange, qrange, intracell, intercell, trans_1, trans_2, resolution)
+    plot_extinction(wrange, qrange, lattice, resolution)
