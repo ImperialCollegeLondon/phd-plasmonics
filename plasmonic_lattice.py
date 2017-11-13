@@ -315,17 +315,21 @@ def calculateInteraction(cell, w, q):
 
 
 if __name__ == "__main__":
-    a = 15.*10**-9  # lattice spacing
-    r = 5.*10**-9  # particle radius
-    wp = 6.18  # plasma frequency
-    g = 0.08  # losses
+    global ev
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
+    global c
     c = 2.997*10**8  # speed of light
-    wmin = wp/np.sqrt(2) - 1.
-    wmax = wp/np.sqrt(2) + 1.
-    resolution = 120
 
-    lattice = Square(a, r, wp, g, neighbours=20, scaling=1)
+    lattice_spacing = 15.*10**-9  # lattice spacing
+    particle_radius = 5.*10**-9  # particle radius
+    plasma_freq = 6.18  # plasma frequency
+    loss = 0.05  # losses
+
+    wmin = plasma_freq/np.sqrt(2) - 1.
+    wmax = plasma_freq/np.sqrt(2) + 1.
+    resolution = 210
+
+    lattice = SimpleHoneycomb(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=15, scaling=1)
     Extinction(lattice, resolution, wmin, wmax).plotExtinction()
 
     # plt.scatter([i.pos[0] for i in lattice.getUnitCell()], [i.pos[1] for i in lattice.getUnitCell()])
