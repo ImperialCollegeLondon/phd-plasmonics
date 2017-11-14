@@ -55,7 +55,7 @@ class Square(Particle):
         Particle.__init__(self, radius, wp, loss)
 
     def getUnitCell(self):
-        return [(0, 0)]
+        return [Particle(self.radius, self.wp, self.loss, 0, 0)]
 
     def getNeighbours(self):
         """
@@ -134,22 +134,26 @@ class SimpleHoneycomb(Particle):
         """
         Create set of (x,y) coordinates for path in reciprocal space.
 
-        From K to Gamma to M
+        From Gamma to K to M
         """
-        b = self.spacing * 3 * self.scaling
-        Gamma_K_x = np.zeros(int(size/2))
-        Gamma_K_y = np.linspace(0, (4*np.pi)/(np.sqrt(3)*b), size/2, endpoint = False)
 
-        K_M_x = np.linspace(0, (2*np.pi)/b, size/2, endpoint = True)
-        K_M_y = np.linspace((4*np.pi)/(np.sqrt(3)*b), 0, size/2, endpoint = True)
+        Gamma_M_x = np.linspace(0, (2*np.pi)/(3*self.spacing), int(size/3), endpoint=False)
+        Gamma_M_y = np.zeros(int(size/3))
 
-        q_x = np.concatenate((Gamma_K_x, K_M_x))
-        q_y = np.concatenate((Gamma_K_y, K_M_y))
+        M_K_x = np.linspace((2*np.pi)/(3*self.spacing), 0, int(size/3), endpoint=False)
+        M_K_y = np.linspace(0, (4*np.pi)/(3*np.sqrt(3)*self.spacing), int(size/3), endpoint=False)
+
+        K_Gamma_x = np.zeros(int(size/3))
+        K_Gamma_y = np.linspace((4*np.pi)/(3*np.sqrt(3)*self.spacing), 0, size/3, endpoint=True)
+
+        q_x = np.concatenate((Gamma_M_x, M_K_x, K_Gamma_x))
+        q_y = np.concatenate((Gamma_M_y, M_K_y, K_Gamma_y))
 
         return np.array(list(zip(q_x, q_y)))
 
     def getCellSize(self):
         return 2
+
 
 class Honeycomb(Particle):
     def __init__(self, spacing, radius, wp, loss, neighbours, scaling):
@@ -302,7 +306,7 @@ def calculateInteraction(cell, w, q):
 
         for n, m in itertools.combinations(indices, 2):
             H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n].pos + intracell[m].pos + inter) * np.exp(1j * np.dot(q, -intracell[n].pos + intracell[m].pos + inter)) for inter in intercell])
-            H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -(-intracell[n].pos + intracell[m].pos + inter)) * np.exp(1j * np.dot(q, -(-intracell[n].pos + intracell[m].pos +  inter))) for inter in intercell])
+            H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -intracell[m].pos + intracell[n].pos + inter) * np.exp(1j * np.dot(q, -intracell[m].pos + intracell[n].pos + inter)) for inter in intercell])
 
         for n in indices:
             to_sum = []
@@ -325,14 +329,14 @@ if __name__ == "__main__":
     plasma_freq = 6.18  # plasma frequency
     loss = 0.05  # losses
 
-    wmin = plasma_freq/np.sqrt(2) - 1.
-    wmax = plasma_freq/np.sqrt(2) + 1.
-    resolution = 210
+    wmin = plasma_freq/np.sqrt(2) - 1
+    wmax = plasma_freq/np.sqrt(2) + 1
+    resolution = 150
 
-    lattice = SimpleHoneycomb(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=15, scaling=1)
-    Extinction(lattice, resolution, wmin, wmax).plotExtinction()
+    lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=1, scaling=1)
+    #Extinction(lattice, resolution, wmin, wmax).plotExtinction()
 
-    # plt.scatter([i.pos[0] for i in lattice.getUnitCell()], [i.pos[1] for i in lattice.getUnitCell()])
-    # plt.scatter([i[0] for i in lattice.getNeighbours(1)], [i[1] for i in lattice.getNeighbours(1)])
-    #
-    # plt.show()
+    plt.scatter([i.pos[0] for i in lattice.getUnitCell()], [i.pos[1] for i in lattice.getUnitCell()])
+    plt.scatter([i[0] for i in lattice.getNeighbours()], [i[1] for i in lattice.getNeighbours()])
+
+    plt.show()
