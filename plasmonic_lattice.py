@@ -55,16 +55,16 @@ class Square(Particle):
         Particle.__init__(self, radius, wp, loss)
 
     def getUnitCell(self):
+        """
+        Square has single particle in unit cell at origin
+        """
         return [Particle(self.radius, self.wp, self.loss, 0, 0)]
 
     def getNeighbours(self):
         """
         Function to create square lattice structure, ignoring the origin.
-
-        args:
-        - neighbours: number of neighbours to create in each primitive lattice
-        vector direction.
         """
+
         t1 = np.array([0, self.scaling*self.spacing])
         t2 = np.array([self.scaling*self.spacing, 0])
 
@@ -82,7 +82,7 @@ class Square(Particle):
         Gamma to X to M to Gamma.
 
         args:
-        - number: number of points to create
+        - size: number of points to create
         """
 
         Gamma_X_x = np.linspace(0, np.pi/self.spacing, size/3,
@@ -114,6 +114,7 @@ class SimpleHoneycomb(Particle):
         Particle.__init__(self, radius, wp, loss)
 
     def getUnitCell(self):
+        """Honeycomb has two particle unit cell"""
         particle_list = []
         for x, y in [(-self.spacing/2, 0), (self.spacing/2, 0)]:
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
@@ -134,7 +135,7 @@ class SimpleHoneycomb(Particle):
         """
         Create set of (x,y) coordinates for path in reciprocal space.
 
-        From Gamma to K to M
+        From Gamma to M to K to Gamma.
         """
 
         Gamma_M_x = np.linspace(0, (2*np.pi)/(3*self.spacing), int(size/3), endpoint=False)
@@ -165,6 +166,7 @@ class Honeycomb(Particle):
         Particle.__init__(self, radius, wp, loss)
 
     def getUnitCell(self):
+        """Honeycomb has 6 particle unit cell"""
         particle_list = []
         for x, y in [(self.spacing, 0), (self.spacing*0.5, -self.spacing*np.sqrt(3)/2), (-self.spacing*0.5, -self.spacing*np.sqrt(3)/2), (-self.spacing, 0), (-self.spacing*0.5, self.spacing*np.sqrt(3)/2), (self.spacing*0.5, self.spacing*np.sqrt(3)/2)]:
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
@@ -228,6 +230,9 @@ class Extinction:
         self.qrange = cell.getReciprocalLattice(self.resolution)
 
     def calcExtinction(self, w, q):
+        """
+        Find the extinction at a particular (w, q).
+        """
         print(w)
         k = w*ev
         H_matrix = calculateInteraction(self.cell, w, q)
@@ -237,9 +242,17 @@ class Extinction:
         return 4*np.pi*k*(sum(1/sp.linalg.eigvals(H_matrix)).imag)
 
     def _calcExtinction(self, args):
+        """
+        Wrapper for multiprocessing.
+        """
         return self.calcExtinction(*args)
 
     def loopExtinction(self):
+        """
+        Method for quickly looping over (w, q) using multiprocessing.
+
+        Calculates the extinction at each (w, q) using calcExtinction() then returns a linear list of extinction values.
+        """
         results = []
         wq_vals = [(w, q) for w in self.wrange for q in self.qrange]
         pool = Pool()
@@ -248,6 +261,11 @@ class Extinction:
         return results
 
     def plotExtinction(self):
+        """
+        Method for plotting extinction.
+
+        Takes linear list of extinction values from loopExtinction(), reshapes into (size * size) array and plots using imshow().
+        """
         light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(self.qrange)]
         plt.plot(light_line, 'r--', zorder=1, alpha=0.5)
 
@@ -264,7 +282,7 @@ def green(k, distance):
 
     Calculate the Green's function tensor between particles which are separated
     by a vector distance at a frequency k. For a 2D Green's function, the
-    interactions are modelled with Hankel function.s
+    interactions are modelled with Hankel functions.
 
     Returns a matrix of the form [[G_xx, G_xy],[G_xy, G_yy]]
     """
@@ -298,13 +316,15 @@ def calculateInteraction(cell, w, q):
 
     matrix_size = cell_size*2
 
-    if cell_size == 1:
+    if cell_size == 1:  # No interactions within the cell, only with other cells
         H = sum([green(w, inter) * np.exp(-1j * np.dot(q, inter)) for inter in intercell])
 
-    else:
+    else:  # Interactions within and with other cells
         H = np.zeros((matrix_size, matrix_size), dtype=np.complex_)
 
         for n, m in itertools.combinations(indices, 2):
+            # Loop over (n, m) = (0, 1), (0, 2)... (1, 2), (1, 3)... (2, 3), (2, 4)...
+            # More efficient than considering repeated interactions.
             H[2*n:2*n+2, 2*m:2*m+2] = sum([green(k, -intracell[n].pos + intracell[m].pos + inter) * np.exp(1j * np.dot(q, -intracell[n].pos + intracell[m].pos + inter)) for inter in intercell])
             H[2*m:2*m+2, 2*n:2*n+2] = sum([green(k, -intracell[m].pos + intracell[n].pos + inter) * np.exp(1j * np.dot(q, -intracell[m].pos + intracell[n].pos + inter)) for inter in intercell])
 
@@ -324,19 +344,14 @@ if __name__ == "__main__":
     global c
     c = 2.997*10**8  # speed of light
 
-    lattice_spacing = 15.*10**-9  # lattice spacing
-    particle_radius = 5.*10**-9  # particle radius
+    lattice_spacing = 10.*10**-9  # lattice spacing
+    particle_radius = 2.*10**-9  # particle radius
     plasma_freq = 6.18  # plasma frequency
-    loss = 0.05  # losses
+    loss = 0.  # losses
 
-    wmin = plasma_freq/np.sqrt(2) - 1
-    wmax = plasma_freq/np.sqrt(2) + 1
-    resolution = 150
+    wmin = plasma_freq/np.sqrt(2) - 0.6
+    wmax = plasma_freq/np.sqrt(2) + 0.6
+    resolution = 120
 
     lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=1, scaling=1)
-    #Extinction(lattice, resolution, wmin, wmax).plotExtinction()
-
-    plt.scatter([i.pos[0] for i in lattice.getUnitCell()], [i.pos[1] for i in lattice.getUnitCell()])
-    plt.scatter([i[0] for i in lattice.getNeighbours()], [i[1] for i in lattice.getNeighbours()])
-
-    plt.show()
+    Extinction(lattice, resolution, wmin, wmax).plotExtinction()
