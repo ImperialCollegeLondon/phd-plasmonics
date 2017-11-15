@@ -114,7 +114,7 @@ class SimpleHoneycomb(Particle):
         Particle.__init__(self, radius, wp, loss)
 
     def getUnitCell(self):
-        """Honeycomb has two particle unit cell"""
+        """Honeycomb has two particle unit cell"""r = particles[0] +
         particle_list = []
         for x, y in [(-self.spacing/2, 0), (self.spacing/2, 0)]:
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
