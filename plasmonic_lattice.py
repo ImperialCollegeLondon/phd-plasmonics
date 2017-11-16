@@ -52,7 +52,12 @@ class Square(Particle):
         self.wp = wp
         self.loss = loss
         self.neighbours = neighbours
+        self.t1 = np.array([0, self.scaling*self.spacing])
+        self.t2 = np.array([self.scaling*self.spacing, 0])
         Particle.__init__(self, radius, wp, loss)
+
+    def getLatticeVectors(self):
+        return [self.t1, self.t2]
 
     def getUnitCell(self):
         """
@@ -65,14 +70,11 @@ class Square(Particle):
         Function to create square lattice structure, ignoring the origin.
         """
 
-        t1 = np.array([0, self.scaling*self.spacing])
-        t2 = np.array([self.scaling*self.spacing, 0])
-
         lattice_points = []
         lattice_range = np.arange(-self.neighbours, self.neighbours+1)
         for (i, j) in itertools.product(lattice_range, repeat=2):
             if i != 0 or j != 0:  # ignore the origin
-                lattice_points.append(i*t1 + j*t2)
+                lattice_points.append(i*self.t1 + j*self.t2)
 
         return np.array(lattice_points)
 
@@ -114,7 +116,7 @@ class SimpleHoneycomb(Particle):
         Particle.__init__(self, radius, wp, loss)
 
     def getUnitCell(self):
-        """Honeycomb has two particle unit cell"""r = particles[0] +
+        """Honeycomb has two particle unit cell"""
         particle_list = []
         for x, y in [(-self.spacing/2, 0), (self.spacing/2, 0)]:
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
@@ -317,7 +319,7 @@ def calculateInteraction(cell, w, q):
     matrix_size = cell_size*2
 
     if cell_size == 1:  # No interactions within the cell, only with other cells
-        H = sum([green(w, inter) * np.exp(-1j * np.dot(q, inter)) for inter in intercell])
+        H = sum([green(k, inter) * np.exp(-1j * np.dot(q, inter)) for inter in intercell])
 
     else:  # Interactions within and with other cells
         H = np.zeros((matrix_size, matrix_size), dtype=np.complex_)
@@ -351,7 +353,7 @@ if __name__ == "__main__":
 
     wmin = plasma_freq/np.sqrt(2) - 0.6
     wmax = plasma_freq/np.sqrt(2) + 0.6
-    resolution = 120
+    resolution = 150
 
     lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=1, scaling=1)
     Extinction(lattice, resolution, wmin, wmax).plotExtinction()
