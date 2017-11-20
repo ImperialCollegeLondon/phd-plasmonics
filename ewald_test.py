@@ -28,7 +28,7 @@ def _green(args):
 
 
 def latticeSum(a1, a2, k, q, lat_size):
-    lattice = latticeGenerator(a1, a2, lat_size, False)
+    lattice = list(latticeGenerator(a1, a2, lat_size, False))
     results = []
     pool = Pool()
     values = [(i, k, q) for i in lattice]
@@ -88,16 +88,16 @@ def lattice_sum(a1, a2, size, k, q):
     lattice = latticeGenerator(a1, a2, size, False)
     _sum = 0
     for position in lattice:
-        _sum += green_dyadic(k, position) * np.exp(-1j * np.dot(q, position))
+        _sum += green_dyadic(k, position) * np.exp(1j * np.dot(q, position))
     return _sum
 
 
-def getPolarisability(k, wp, loss, radius):
+def getPolarisability(w, wp, loss, radius):
     """
     Return the polarisability for a particle.
 
     """
-    w = float(k / ev)
+    k = w * ev
 
     permittivity = 1 - (wp**2)/(w**2 - 1j*loss*w)
     eps = (permittivity-1)/(permittivity+1)
@@ -106,10 +106,8 @@ def getPolarisability(k, wp, loss, radius):
 
 
 class EwaldSum:
-    def __init__(self, a1, a2, b_lat_size, r_lat_size, k, q, origin, ewald, accuracy):
+    def __init__(self, a1, a2, b_lat_size, r_lat_size, origin, ewald, accuracy):
         self.bravais = list(latticeGenerator(a1, a2, b_lat_size, False))
-        self.k = k
-        self.q = q
         self.E = ewald
         self.j_max = accuracy
         self.r = origin
@@ -119,119 +117,99 @@ class EwaldSum:
 
         self.recip = list(latticeGenerator(b1, b2, r_lat_size, True))
 
-    def sumG1(self):
+    def sumG1(self, q, w):
+        k = w*ev
         area = float(np.cross(a1, a2))
         _sum = 0
         for position in self.recip:
-            _sum += (1./area) * np.exp(1j*np.dot(self.q+position, self.r)) * np.exp((self.k**2 - np.linalg.norm(self.q+position)**2)/(4*self.E**2))/(self.k**2 - np.linalg.norm(self.q+position)**2)
+            _sum += (1./area) * (np.exp(1j*np.dot(q+position, self.r)) * np.exp((k**2 - np.linalg.norm(q+position)**2)/(4*self.E**2)))/(np.linalg.norm(q+position)**2 - k**2)
         return _sum
 
-    def integralFunc(self, separation):
+    def integralFunc(self, separation, q, w):
+        k = w*ev
         _sum = 0
         for j in range(0, self.j_max+1):
-            _sum += (1./np.math.factorial(j)) * (self.k/(2*self.E))**(2*j) * sp.special.expn(j+1, separation**2*self.E**2)
+            _sum += (1./np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j+1, separation**2*self.E**2)
         return _sum
 
-    def sumG2(self):
+    def sumG2(self, q, w):
         _sum = 0
         for position in self.bravais:
-            distance = np.linalg.norm(position + self.r)
-            _sum += (1./(2*np.pi)) * np.exp(-1j * np.dot(self.q, self.r + position)) * self.integralFunc(distance)
+            distance = np.linalg.norm(self.r - position)
+            _sum += (1./(4*np.pi)) * np.exp(1j * np.dot(q, position)) * self.integralFunc(distance, q, w)
         return _sum
 
-    def total_sum(self):
-        return self.sumG1() + self.sumG2()
+    def total_sum(self, q, w):
+        return self.sumG1(q,w) + self.sumG2(q,w)
 
-    def sumG1_deriv(self, _type):
-        area = float(np.cross(a1, a2))
+    def sumG1_deriv(self, _type, q, w):
         _sum = 0
+        area = float(np.cross(a1, a2))
+        k = w*ev
         for position in self.recip:
             if _type == "xx":
-                _sum += -(1./area) * (self.q[0] + position[0])**2 * np.exp(1j*np.dot(self.q+position, self.r)) * np.exp((self.k**2 - np.linalg.norm(self.q+position)**2)/(4*self.E**2))/(self.k**2 - np.linalg.norm(self.q+position)**2)
+                _sum += -(q+position)[0]**2 * (1./area) * (np.exp(1j*np.dot(q+position, self.r)) * np.exp((k**2 - np.linalg.norm(q+position)**2)/(4*self.E**2)))/(np.linalg.norm(q+position)**2 - k**2)
             elif _type == "yy":
-                _sum += -(1./area) * (self.q[1] + position[1])**2 * np.exp(1j*np.dot(self.q+position, self.r)) * np.exp((self.k**2 - np.linalg.norm(self.q+position)**2)/(4*self.E**2))/(self.k**2 - np.linalg.norm(self.q+position)**2)
+                _sum += -(q+position)[1]**2 * (1./area) * (np.exp(1j*np.dot(q+position, self.r)) * np.exp((k**2 - np.linalg.norm(q+position)**2)/(4*self.E**2)))/(np.linalg.norm(q+position)**2 - k**2)
             elif _type == "xy":
-                _sum += -(1./area) * (self.q[0] + position[0])*(self.q[1] + position[1]) * np.exp(-1j*np.dot(self.q+position, self.r)) * np.exp((self.k**2 - np.linalg.norm(self.q+position)**2)/(4*self.E**2))/(self.k**2 - np.linalg.norm(self.q+position)**2)
+                _sum += -(q+position)[0] * (q+position)[1] * (1./area) * (np.exp(1j*np.dot(q+position, self.r)) * np.exp((k**2 - np.linalg.norm(q+position)**2)/(4*self.E**2)))/(np.linalg.norm(q+position)**2 - k**2)
+        print(_sum)
         return _sum
 
-    def sumG2_deriv(self, __type):
-        def u1(dist):
-            return -np.exp(-1j*np.dot(self.q, dist))
 
-        def v1(dist):
+    def integralFunc_deriv(self, separation, _type, q, w):
+        r_ewald_product = np.linalg.norm(separation)**2 * self.E**2
+        k = w*ev
+        if _type is "xx":
             _sum = 0
-            for j in range(0, self.j_max+1):
-                _sum += (1./np.math.factorial(j)) * (self.k/2)**(2*j) * (self.E)**(2-(2*j)) * sp.special.expn(j, np.linalg.norm(dist)**2*self.E**2)
-            return _sum
-
-        def du1(dist, _type):
-            if _type is 'x':
-                return 1j*self.q[0]*np.exp(-1j*np.dot(self.q, dist))
-            elif _type is 'y':
-                return 1j*self.q[1]*np.exp(-1j*np.dot(self.q, dist))
-
-        def dv1(dist, _type):
-            _sum = 0
+            pre = separation[0]**2
             for j in range(1, self.j_max+1):
-                _sum += (1./np.math.factorial(j)) * (self.k/2)**(2*j) * (self.E)**(4-(2*j)) * sp.special.expn(j-1, np.linalg.norm(dist)**2*self.E**2)
-            if _type is'x':
-                return -2*dist[0]*(((np.linalg.norm(dist)**2 * self.E**2 + 1)/np.linalg.norm(dist)**4)*np.exp(-np.linalg.norm(dist)**2*self.E**2) - _sum)
-            if _type is'y':
-                return -2*dist[1]*(((np.linalg.norm(dist)**2 * self.E**2 + 1)/np.linalg.norm(dist)**4)*np.exp(-np.linalg.norm(dist)**2*self.E**2) - _sum)
-
-        def u2(dist, _type):
-            if _type is 'x':
-                return -1j*self.q[0]*np.exp(-1j*np.dot(self.q, dist))
-            elif _type is 'y':
-                return -1j*self.q[1]*np.exp(-1j*np.dot(self.q, dist))
-
-        def v2(dist):
+                _sum += (1./np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-2*self.E**2*sp.special.expn(j, r_ewald_product) + 4*pre*self.E**2*sp.special.expn(j-1, r_ewald_product))
+        elif _type is "xy":
             _sum = 0
-            for j in range(0, self.j_max+1):
-                _sum += (1./np.math.factorial(j)) * (self.k/(2 *self.E**2))**(2*j) * sp.special.expn(j+1, np.linalg.norm(dist)**2*self.E**2)
-            return _sum
-
-        def du2(dist, _type):
-            if _type is 'xx':
-                return -dist[0]**2 * np.exp(-1j*np.dot(self.q, dist))
-            if _type is 'xy':
-                return -dist[0]*dist[1] * np.exp(-1j*np.dot(self.q, dist))
-            if _type is 'yy':
-                return -dist[1]**2 * np.exp(-1j*np.dot(self.q, dist))
-
-        def dv2(dist, _type):
+            pre = separation[0] * separation[1]
+            for j in range(1, self.j_max+1):
+                _sum += (1./np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-2*self.E**2*sp.special.expn(j, r_ewald_product) + 4*pre*self.E**2*sp.special.expn(j-1, r_ewald_product))
+        elif _type is "yy":
             _sum = 0
-            for j in range(0, self.j_max+1):
-                _sum += (1./np.math.factorial(j)) * (self.k/2)**(2*j) * self.E**(2-2*j) * sp.special.expn(j, np.linalg.norm(dist)**2*self.E**2)
-            if _type is 'x':
-                return _sum * -2*dist[0]
-            elif _type is 'y':
-                return _sum * -2*dist[1]
+            pre = separation[1]**2
+            for j in range(1, self.j_max+1):
+                _sum += (1./np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-2*self.E**2*sp.special.expn(j, r_ewald_product) + 4*pre*self.E**2*sp.special.expn(j-1, r_ewald_product))
 
+        return _sum
+
+    def sumG2_deriv(self, __type, q, w):
+        _sum = 0
         for position in self.bravais:
-            pos = np.array(position)+self.r
-            if __type is 'xx':
-                return 2*pos[0]*u1(pos)*dv1(pos, 'x') + 2*u1(pos)*v1(pos) + 2*pos[0]*v1(pos)*du1(pos, 'x') + u2(pos, 'x')*dv2(pos, 'x') + v2(pos)*du2(pos, 'xx')
-            elif __type is 'xy':
-                return 2*pos[1]*u1(pos)*dv1(pos, 'x') + 2*pos[1]*v1(pos)*du1(pos, 'x') + u2(pos, 'x')*dv2(pos, 'x') + v2(pos)*du2(pos, 'xy')
-            elif __type is 'yx':
-                return 2*pos[0]*u1(pos)*dv1(pos, 'y') + 2*pos[0]*v1(pos)*du1(pos, 'y') + u2(pos, 'y')*dv2(pos, 'y') + v2(pos)*du2(pos, 'xy')
-            elif __type is 'yy':
-                return 2*pos[1]*u1(pos)*dv1(pos, 'y') + 2*u1(pos)*v1(pos) + 2*pos[1]*v1(pos)*du1(pos, 'y') + u2(pos, 'y')*dv2(pos, 'y') + v2(pos)*du2(pos, 'yy')
+            position = np.array(position)
+            distance = self.r - position
+            r_ewald_product = np.linalg.norm(distance)**2 * self.E**2
+            if __type is "xx":
+                pre = distance[0]**2
+                _sum += 1/(4*np.pi) * np.exp(1j*np.dot(q, position)) * (self.integralFunc_deriv(distance, __type, q, w) - 2*self.E**2*np.exp(-r_ewald_product)/r_ewald_product + 4*pre*(r_ewald_product+1)*np.exp(-r_ewald_product)/np.linalg.norm(distance)**4)
+            elif __type is "xy":
+                pre = distance[0] * distance[1]
+                _sum += 1/(4*np.pi) * np.exp(1j*np.dot(q, position)) * (self.integralFunc_deriv(distance, __type, q, w) - 2*self.E**2*np.exp(-r_ewald_product)/r_ewald_product + 4*pre*(r_ewald_product+1)*np.exp(-r_ewald_product)/np.linalg.norm(distance)**4)
+            elif __type is "yy":
+                pre = distance[1]**2
+                _sum += 1/(4*np.pi) * np.exp(1j*np.dot(q, position)) * (self.integralFunc_deriv(distance, __type, q, w) - 2*self.E**2*np.exp(-r_ewald_product)/r_ewald_product + 4*pre*(r_ewald_product+1)*np.exp(-r_ewald_product)/np.linalg.norm(distance)**4)
 
-    def total_deriv(self):
-        xx_comp = self.sumG1_deriv("xx") + self.sumG2_deriv("xx")
-        yy_comp = self.sumG1_deriv("yy") + self.sumG2_deriv("yy")
-        xy_comp = self.sumG1_deriv("xy") + self.sumG2_deriv("xy")
-        yx_comp = self.sumG1_deriv("xy") + self.sumG2_deriv("yx")
-        return np.array([[xx_comp, xy_comp],[yx_comp, yy_comp]])
+        return _sum
 
-    def dyadic_sum(self):
-        return self.k**2*self.total_sum()*np.identity(2) + self.total_deriv()
+    def total_deriv(self, q, w):
+        xx_comp = self.sumG1_deriv("xx", q, w) + self.sumG2_deriv("xx", q, w)
+        yy_comp = self.sumG1_deriv("yy", q, w) + self.sumG2_deriv("yy", q, w)
+        xy_comp = self.sumG1_deriv("xy", q, w) + self.sumG2_deriv("xy", q, w)
+        return np.array([[xx_comp, xy_comp],[xy_comp, yy_comp]])
 
-    def extinction(self):
-        matrix = self.dyadic_sum() - (np.identity(2) * 1/getPolarisability(self.k, wp, loss, radius))
-        return 4*np.pi*self.k*(sum(1/sp.linalg.eigvals(matrix)).imag)
+    def dyadic_sum(self, q, w):
+        k = w * ev
+        return k**2*self.total_sum(q, w)*np.identity(2) + self.total_deriv(q, w)
+
+    def extinction(self, q, w):
+        k = w * ev
+        matrix = self.dyadic_sum(q, w) - (np.identity(2) * 1/getPolarisability(w, wp, loss, radius))
+        return 4*np.pi*k*(sum(1/sp.linalg.eigvals(matrix)).imag)
 
 
 def getReciprocalLattice(size, spacing):
@@ -259,27 +237,32 @@ def getReciprocalLattice(size, spacing):
     return np.array(list(zip(q_x, q_y)))
 
 
-def plotConvergence():
+def plotConvergence(size):
     summations = []
-    k = wp*ev
-    q = qrange[10]
-    for i in range(1,10):
+    w = wp
+    k = w*ev
+    q = qrange[20]
+    for i in range(1,size):
         print(i)
-        summations.append(EwaldSum(a1, a2, i, i, k, q, pos, np.pi/a, 3).dyadic_sum())
+        summations.append(EwaldSum(a1, a2, i, i, pos, 2*np.pi/a, 50).dyadic_sum(q, w))
+        #summations.append(lattice_sum(a1, a2, i, k, q))
     fig, ax = plt.subplots(4,2)
-    ax[0][0].plot([i[0][0].real for i in summations], c='r')
-    ax[0][1].plot([i[0][0].imag for i in summations], c='r', alpha=0.5)
+    ax[0][0].plot([i**2-1 for i in range(1,size)],[i[0][0].real for i in summations], c='r')
+    ax[0][1].plot([i**2-1 for i in range(1,size)],[i[0][0].imag for i in summations], c='r', alpha=0.5)
 
-    ax[1][0].plot([i[0][1].real for i in summations], c='b')
-    ax[1][1].plot([i[0][1].imag for i in summations], c='b', alpha=0.5)
+    ax[1][0].plot([i**2-1 for i in range(1,size)],[i[0][1].real for i in summations], c='b')
+    ax[1][1].plot([i**2-1 for i in range(1,size)],[i[0][1].imag for i in summations], c='b', alpha=0.5)
 
-    ax[2][0].plot([i[1][0].real for i in summations], c='k')
-    ax[2][1].plot([i[1][0].imag for i in summations], c='k', alpha=0.5)
+    ax[2][0].plot([i**2-1 for i in range(1,size)],[i[1][0].real for i in summations], c='k')
+    ax[2][1].plot([i**2-1 for i in range(1,size)],[i[1][0].imag for i in summations], c='k', alpha=0.5)
 
-    ax[3][0].plot([i[1][1].real for i in summations], c='g')
-    ax[3][1].plot([i[1][1].imag for i in summations], c='g', alpha=0.5)
+    ax[3][0].plot([i**2-1 for i in range(1,size)],[i[1][1].real for i in summations], c='g')
+    ax[3][1].plot([i**2-1 for i in range(1,size)],[i[1][1].imag for i in summations], c='g', alpha=0.5)
 
     plt.show()
+
+    def _extinction(args):
+        return EwaldSum(*args)
 
 
 if __name__ == '__main__':
@@ -287,31 +270,32 @@ if __name__ == '__main__':
     a = 15*10**-9
     radius = 5*10**-9
     wp = 3.5
-    loss = 0.05
+    loss = 0.08
     a1 = np.array([0, a])
     a2 = np.array([a, 0])
     pos = np.array([0, 0])
 
-    res = 45
+    res = 30
 
     result = []
     qrange = getReciprocalLattice(res, a)
     #qrange = list(zip(np.zeros(res), np.linspace(3.5*np.pi/(np.sqrt(3)*a),4.5*np.pi/(np.sqrt(3)*a), res)))
-    wmin = 5
-    wmax = 6
-    for w in np.linspace(wmin,wmax,res):
-        print(w)
-        for q in qrange:
-            k = w*ev
-            ewald = EwaldSum(a1, a2, 3, 3, k, q, pos, 2*np.pi/a, 3)
-            result.append(ewald.extinction())
+    wmin = 1
+    wmax = 10
 
-    result = np.array(result).reshape((res,res))
+    # for w in np.linspace(wmin,wmax,res):
+    #     print(w)
+    #     for q in qrange:
+    #         k = w*ev
+    #         ewald = EwaldSum(a1, a2, 10, 10, pos, 2*np.pi/a, 1)
+    #         result.append(ewald.extinction(q, w))
+    #
+    # result = np.array(result).reshape((res,res))
+    #
+    # light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
+    # plt.plot(light_line, 'r--', zorder=1, alpha=0.5)
+    #
+    # plt.imshow(result, origin="lower", extent=[0, res-1, wmin, wmax], aspect='auto')
+    # plt.show()
 
-    light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
-    plt.plot(light_line, 'r--', zorder=1, alpha=0.5)
-
-    plt.imshow(result, origin="lower", extent=[0, res-1, wmin, wmax], aspect='auto')
-    plt.show()
-
-    #plotConvergence()
+    plotConvergence(10)

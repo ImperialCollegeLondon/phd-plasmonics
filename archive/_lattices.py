@@ -165,8 +165,9 @@ class Interaction:
 
             indices = np.arange(size)
             for (n, m) in itertools.combinations(indices, 2):
-                # do something
-                f
+                h_matrix[2*n:2*n+2, 2*m:2*m+2] = sum([self.green(w, -self.unit_cell[n].pos + self.unit_cell[m].pos + inter) * np.exp(1j * np.dot(self.q, -self.unit_cell[n].pos + self.unit_cell[m].pos + inter)) for inter in self.neighbours])
+
+                h_matrix[2*m:2*m+2, 2*n:2*n+2] = sum([self.green(w, -self.unit_cell[m].pos + self.unit_cell[n].pos + inter) * np.exp(1j * np.dot(self.q, -self.unit_cell[m].pos + self.unit_cell[n].pos + inter)) for inter in self.neighbours])
         elif size == 1:  # for unit cell with single particle
             h_matrix = sum([self.green(w, inter) * np.exp(-1j * np.dot(self.q, inter)) for inter in self.neighbours])
 
@@ -190,11 +191,16 @@ def determinant_solver(w, qrange, unit_cell, neighbours):
     return roots
 
 
+
 if __name__ == '__main__':
     square_lattice = Square(30*10**-9, 10*10**-9, 3.5, 0.01)
     unit = square_lattice.getUnitCell()
-    neighbours = square_lattice.getBravaisLattice(2)
+    neighbours = square_lattice.getBravaisLattice(1)
     qspace = square_lattice.getReciprocalLattice(60)
     wp = 3.5
 
-    print(square_lattice.getUnitCell().pos)
+    result = determinant_solver([wp+0.1, 0.05], qspace, unit, neighbours)
+    fig, ax = plt.subplots(2)
+    ax[0].scatter(np.arange(60), [np.abs(i) for i,j in result])
+    ax[1].scatter(np.arange(60), [np.abs(j) for i,j in result])
+    plt.show()

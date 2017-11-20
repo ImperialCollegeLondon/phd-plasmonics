@@ -303,9 +303,8 @@ def extinction_cross_section(wrange, q, intracell, intercell):
 
 
 def dispersion_relation(q, intracell, intercell, resolution, wmin, wmax):
-    print('done' + str(q))
-
     matches = []
+    print(q)
     for w in [wp/np.sqrt(2) +0.2, wp/np.sqrt(2)-0.2]:
         matches.append(sp.optimize.root(square_tosolve, ([w, 0.]), args = (intracell, intercell, q)).x)
 
@@ -318,35 +317,36 @@ if __name__ == "__main__":
     a = 15.*10**-9  # lattice spacing
     r = 5.*10**-9  # particle radius
     wp = 6.18  # plasma frequency
-    g = 0.0  # losses
+    g = 0.01  # losses
     scaling = 1.
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)  # k-> w conversion
     c = 2.997*10**8  # speed of light
 
-    trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
-    trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
-    intracell = honeycomb(a, r, wp, g)
-    intercell = honeycomb_supercell(a, intracell, trans_1, trans_2, 1)
+    # trans_1 = np.array([scaling*3*a, 0])  # 1st Bravais lattice vector
+    # trans_2 = np.array([scaling*3*a/2, scaling*np.sqrt(3)*3*a/2])  # 2nd Bravais lattice vector
+    # intracell = honeycomb(a, r, wp, g)
+    # intercell = honeycomb_supercell(a, intracell, trans_1, trans_2, 1)
 
-    # trans_1 = np.array([a, 0])
-    # trans_2 = np.array([0, a])
-    # intracell = square(a, r, wp, g)
-    # intercell = square_supercell(a, intracell, trans_1, trans_2, 2)
-    # wmin = 3.25
-    # wmax = 5.25
-    # qrange = square_reciprocal(a, resolution)
+    resolution = 90
+
+    trans_1 = np.array([a, 0])
+    trans_2 = np.array([0, a])
+    intracell = square(a, r, wp, g)
+    intercell = square_supercell(a, intracell, trans_1, trans_2, 2)
+    wmin = 3.25
+    wmax = 5.25
+    qrange = square_reciprocal(a, resolution)
 
     #plot_interactions(intracell, intercell)
 
     # wmin = wp/np.sqrt(2) - 1
     # wmax = wp/np.sqrt(2) + 1
-    wmin = 4
-    wmax = 4.75
-    resolution = 100
-
+    # wmin = 4
+    # wmax = 4.75
+    #
     wrange = np.linspace(wmin, wmax, resolution, endpoint=True)
-    qrange = honeycomb_reciprocal_space(a, resolution)
-
+    # qrange = honeycomb_reciprocal_space(a, resolution)
+    #
     light_line = [(np.linalg.norm(qval)/ev) for q, qval in enumerate(qrange)]
     plt.plot(light_line, zorder=1)
     raw_results = calculate_extinction(wrange, qrange, intracell, intercell)
@@ -377,6 +377,17 @@ if __name__ == "__main__":
 ####
 
     # fig, ax = plt.subplots(2)
+    # ax[0].set_title("spacing=15nm, radius=5nm, wp=6.18eV, loss=0.01eV. 2499 neighbours")
+    # ax[0].set_ylabel("Re[$\omega (eV)]$")
+    # ax[1].set_ylabel("Im[$\omega (eV)]$")
+    # ax[0].set_xticklabels([])
+    # ax[1].set_xticklabels([])
+    # ax[0].set_ylim(3, 5.5)
+    # ax[1].set_ylim(-0.5,0.5)
+    # ax[0].set_xlim(0, resolution-1)
+    # ax[1].set_xlim(0, resolution-1)
+    #
+    # ax[0].text(0,0, "$\Gamma$")
     # res = []
     # qvals = [(q, intracell, intercell, resolution, wmin, wmax) for q in qrange]
     # pool = Pool()
@@ -390,8 +401,11 @@ if __name__ == "__main__":
     #     ax[0].scatter(np.arange(resolution), [i[j][0] for i in res[0]], s=1, c='r')
     #     ax[1].scatter(np.arange(resolution), [i[j][1] for i in res[0]], s=1, c='b')
     #
-    # ax[0].plot([resolution/3, resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
-    # ax[0].plot([2*resolution/3, 2*resolution/3], [wmin, wmax], lw=1, c='k', alpha = 0.2)
+    # ax[0].plot([resolution/3, resolution/3], [wmin-2, wmax+2], lw=1, c='k', alpha = 0.2)
+    # ax[0].plot([2*resolution/3, 2*resolution/3], [wmin-2, wmax+2], lw=1, c='k', alpha = 0.2)
+    #
+    # ax[1].plot([resolution/3, resolution/3], [-1, 1], lw=1, c='k', alpha = 0.2)
+    # ax[1].plot([2*resolution/3, 2*resolution/3], [-1, 1], lw=1, c='k', alpha = 0.2)
     #
     # ax[0].plot([0, resolution], [wp/np.sqrt(2), wp/np.sqrt(2)], lw=1, c='g')
     # ax[1].plot([0, resolution], [0, 0], lw=1, c='k')
