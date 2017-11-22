@@ -80,6 +80,39 @@ class Interaction:
         pool.close()
         return sum(results[0])
 
+    def green_dyadic(self, w, distance):
+        k = w*ev
+
+        x = distance[0]
+        y = distance[1]
+        R = np.linalg.norm(distance)
+        arg = k*R
+
+        xx_type = 0.25j * k**2 * (
+        (y**2/R**2) * sp.special.hankel1(0,arg) +
+        (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
+        )
+
+        yy_type = 0.25j * k**2 * (
+        (x**2/R**2) * sp.special.hankel1(0,arg) -
+        (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
+        )
+
+        xy_type = 0.25j * k**2 * x*y/R**2 * sp.special.hankel1(2,arg)
+
+        return np.array([xx_type, xy_type, yy_type])
+
+    def _green_dyadic(self, args):
+        return self.green_dyadic(*args)
+
+    def dyadicSum(self, w):
+        results = []
+        pool = Pool()
+        values = [(w, np.array(i+self.pos)) for i in self.bravais]
+        results.append(pool.map(self._green_dyadic, values))
+        pool.close()
+        return sum(results[0])
+
 
 class Ewald:
     def __init__(self, ewald, j_max, q, lattice, neighbours, position):
@@ -98,7 +131,7 @@ class Ewald:
         area = float(np.cross(a1, a2))
         _sum = 0
         for G_pos in self.reciprocal:
-            _sum += (1./area) * (np.exp(1j*np.dot(q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(q+G_pos)**2 - k**2)
+            _sum += (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(self.q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
         return _sum
 
     def integralFunc(self, separation, w):
@@ -150,6 +183,25 @@ class Ewald:
             _sum = _sum*(1/(4*np.pi))*np.exp(1j*np.dot(self.q, R_pos))
         return _sum
 
+    def ewaldG1_deriv(self, w, type):
+        k = w*ev
+        a1, a2 = self.lattice.getBravaisVectors()
+
+        area = float(np.cross(a1, a2))
+        _sum = 0
+        for G_pos in self.reciprocal:
+            if type is 'xx':
+                _sum += -(self.q+G_pos)[0]**2 * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
+            elif type is 'yy':
+                _sum += -(self.q+G_pos)[1]**2 * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
+            if type is 'xy':
+                _sum += -(self.q+G_pos)[0]*(self.q+G_pos)[1] * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
+        return _sum
+
+    def derivSum(self, w):
+        return [self.ewaldG1_deriv(w, 'xx') + self.ewaldG2_deriv(w, 'xx'), self.ewaldG1_deriv(w, 'xy') + self.ewaldG2_deriv(w, 'xy'), self.ewaldG1_deriv(w, 'yy') + self.ewaldG2_deriv(w, 'yy')]
+
+
 def testLatticeSum(vector_1, vector_2, neighbour_range, inc_origin, q, w, pos):
     results = []
     ewald_results = []
@@ -186,8 +238,12 @@ if __name__ == '__main__':
 
     result = []
     lattice = Lattice(a1, a2)
-    for i in range(1,20):
-        result.append(Ewald(2*np.pi/a, 5, q, lattice, i, pos).ewaldG2_deriv(wp, 'xx'))
-    plt.plot(result)
+    for i in range(1,50):
+        print(i)
+        #result.append(Ewald(2*np.pi/a, 5, q, lattice, i, pos).derivSum(wp))
+        result.append(Interaction(q, lattice, i, pos).dyadicSum(wp))
+    fig, ax = plt.subplots(3)
+    for j in range(3):
+        ax[j].plot([i**2-1 for i in range(1,50)],[i[j] for i in result])
     print(result)
     plt.show()
