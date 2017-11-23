@@ -75,7 +75,7 @@ class Interaction:
     def monopolarSum(self, w):
         results = []
         pool = Pool()
-        values = [(w, np.array(i+self.pos)) for i in self.bravais]
+        values = [(w, np.array(self.pos-i)) for i in self.bravais]
         results.append(pool.map(self._monopolar_green, values))
         pool.close()
         return sum(results[0])
@@ -108,7 +108,7 @@ class Interaction:
     def dyadicSum(self, w):
         results = []
         pool = Pool()
-        values = [(w, np.array(i+self.pos)) for i in self.bravais]
+        values = [(w, np.array(self.pos-i)) for i in self.bravais]
         results.append(pool.map(self._green_dyadic, values))
         pool.close()
         return sum(results[0])
@@ -131,7 +131,7 @@ class Ewald:
         area = float(np.cross(a1, a2))
         _sum = 0
         for G_pos in self.reciprocal:
-            _sum += (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(self.q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
+            _sum += -(1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(self.q+G_pos)**2)/(4*self.E**2)))/( np.linalg.norm(self.q+G_pos)**2 - k**2)
         return _sum
 
     def integralFunc(self, separation, w):
@@ -145,7 +145,7 @@ class Ewald:
         _sum = 0
         for R_pos in self.bravais:
             distance = np.linalg.norm(self.pos - R_pos)
-            _sum += (1./(4*np.pi)) * np.exp(1j * np.dot(self.q, R_pos)) * self.integralFunc(distance, w)
+            _sum += -(1./(4*np.pi)) * np.exp(1j * np.dot(self.q, R_pos)) * self.integralFunc(distance, w)
         return _sum
 
     def monopolarSum(self, w):
@@ -181,7 +181,7 @@ class Ewald:
                         _sum += (1/np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-self.q[0]*self.q[1] * sp.special.expn(j+1, rho_E_sq) - 2j*self.E**2*(self.q[0]*rho[1] + self.q[1]*rho[0])*sp.special.expn(j, rho_E_sq) + 4*self.E**4*rho[0]*rho[1]*sp.special.expn(j-1, rho_E_sq))
                 _sum += (4/n_rho**4)*rho[0]*rho[1]*(rho_E_sq + 1)*np.exp(-rho_E_sq)
             _sum = _sum*(1/(4*np.pi))*np.exp(1j*np.dot(self.q, R_pos))
-        return _sum
+        return -_sum
 
     def ewaldG1_deriv(self, w, type):
         k = w*ev
@@ -196,17 +196,22 @@ class Ewald:
                 _sum += -(self.q+G_pos)[1]**2 * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
             if type is 'xy':
                 _sum += -(self.q+G_pos)[0]*(self.q+G_pos)[1] * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
-        return _sum
+        return -_sum
 
     def derivSum(self, w):
-        return [self.ewaldG1_deriv(w, 'xx') + self.ewaldG2_deriv(w, 'xx'), self.ewaldG1_deriv(w, 'xy') + self.ewaldG2_deriv(w, 'xy'), self.ewaldG1_deriv(w, 'yy') + self.ewaldG2_deriv(w, 'yy')]
+        k = w*ev
+        pre_factor = k**2*self.monopolarSum(w)
+        xx_comp = pre_factor + self.ewaldG1_deriv(w, 'xx') + self.ewaldG2_deriv(w, 'xx')
+        xy_comp = self.ewaldG1_deriv(w, 'xy') + self.ewaldG2_deriv(w, 'xy')
+        yy_comp = pre_factor + self.ewaldG1_deriv(w, 'yy') + self.ewaldG2_deriv(w, 'yy')
+        return [xx_comp, xy_comp, yy_comp]
 
 
-def testLatticeSum(vector_1, vector_2, neighbour_range, inc_origin, q, w, pos):
+def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
     results = []
     ewald_results = []
     loop_range = range(1, neighbour_range+1)
-    lattice = Lattice(a1, a2)
+    lattice = Lattice(vector_1, vector_2)
     for i in loop_range:
         results.append(Interaction(q, lattice, i, pos).monopolarSum(w))
         print(i**2-1)
@@ -215,15 +220,54 @@ def testLatticeSum(vector_1, vector_2, neighbour_range, inc_origin, q, w, pos):
         ewald_results.append(Ewald(2*np.pi/(a), 5, q, lattice, i, pos).monopolarSum(w))
 
     fig, ax = plt.subplots(2,2)
-    ax[0][0].plot([i**2-1 for i in loop_range], [i.real for i in results])
-    ax[0][1].plot([i**2-1 for i in loop_range], [i.imag for i in results])
+    ax[0][0].set_title("Non-Ewald, Re")
+    ax[1][0].set_title("Non-Ewald, Im")
+    ax[0][1].set_title("Ewald, Re")
+    ax[1][1].set_title("Ewald, Im")
+
+    ax[0][0].plot([i**2-1 for i in loop_range], [i.real for i in results],'r')
+    ax[1][0].plot([i**2-1 for i in loop_range], [i.imag for i in results],'r--')
     print(sum(results)/len(results))
 
-    ax[1][0].plot([i**2-1 for i in range(1, 20)], [i.real for i in ewald_results])
-    ax[1][1].plot([i**2-1 for i in range(1, 20)], [i.imag for i in ewald_results])
-    print(results[neighbour_range-1])
+    ax[0][1].plot([i**2-1 for i in range(1, 20)], [i.real for i in ewald_results],'g')
+    ax[1][1].plot([i**2-1 for i in range(1, 20)], [i.imag for i in ewald_results],'g--')
+    print(ewald_results[18])
+    fig.text(0.5, 0.04, 'Number of terms in sum', ha='center')
+
     plt.show()
 
+
+def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos):
+    results = []
+    ewald_results = []
+    loop_range = range(1, neighbour_range+1)
+    lattice = Lattice(vector_1, vector_2)
+    for i in loop_range:
+        results.append(Interaction(q, lattice, i, pos).dyadicSum(wp))
+        ewald_results.append(Ewald(2*np.pi/a, 5, q, lattice, i, pos).derivSum(wp))
+        print(i**2-1)
+    print("done")
+
+    fig, ax = plt.subplots(3,4)
+    for j in range(3):
+
+        ax[0][0].set_title("Non-Ewald, Re")
+        ax[0][1].set_title("Non-Ewald, Im")
+        ax[0][2].set_title("Ewald, Re")
+        ax[0][3].set_title("Ewald, Im")
+
+        ax[0][0].set_ylabel("$\partial^2/\partial x^2$ sum")
+        ax[1][0].set_ylabel("$\partial^2/\partial x \partial y$ sum")
+        ax[2][0].set_ylabel("$\partial^2/\partial y^2$ sum")
+
+        ax[j][0].plot([i**2-1 for i in loop_range], [i[j].real for i in results], 'r')
+        ax[j][1].plot([i**2-1 for i in loop_range], [i[j].imag for i in results], 'r--')
+        ax[j][2].plot([i**2-1 for i in loop_range], [i[j].real for i in ewald_results], 'g')
+        ax[j][3].plot([i**2-1 for i in loop_range], [i[j].imag for i in ewald_results], 'g--')
+    fig.text(0.5, 0.04, 'Number of terms in sum', ha='center')
+    print(sum(results)/len(results))
+
+    plt.show()
 
 if __name__ == '__main__':
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)
@@ -236,14 +280,5 @@ if __name__ == '__main__':
     pos = np.array([a/3, 0])
     q = np.array([0.1/a, 0])
 
-    result = []
-    lattice = Lattice(a1, a2)
-    for i in range(1,50):
-        print(i)
-        #result.append(Ewald(2*np.pi/a, 5, q, lattice, i, pos).derivSum(wp))
-        result.append(Interaction(q, lattice, i, pos).dyadicSum(wp))
-    fig, ax = plt.subplots(3)
-    for j in range(3):
-        ax[j].plot([i**2-1 for i in range(1,50)],[i[j] for i in result])
-    print(result)
-    plt.show()
+    #testDyadicSum(a1, a2, 50, q, wp, pos)
+    testLatticeSum(a1, a2, 20, q, wp, pos)
