@@ -41,11 +41,7 @@ class Particle:
         return (2*np.pi*self.radius**2 * eps)/(1 - 0.25j*np.pi*(k*self.radius)**2 * eps)
 
 
-class Square(Particle):
-    """
-    Square lattice class.
-    """
-
+class Square(Particle): # TODO: update names of getBravais...
     def __init__(self, spacing, radius, wp, loss, neighbours, scaling):
         self.spacing = spacing
         self.scaling = scaling
@@ -65,7 +61,7 @@ class Square(Particle):
         """
         return [Particle(self.radius, self.wp, self.loss, 0, 0)]
 
-    def getNeighbours(self):
+    def getBravais(self):
         """
         Function to create square lattice structure, ignoring the origin.
         """
@@ -78,7 +74,7 @@ class Square(Particle):
 
         return np.array(lattice_points)
 
-    def getReciprocalLattice(self, size):
+    def getBrillouinZone(self, size):
         """
         Generate set of reciprocal lattice points from
         Gamma to X to M to Gamma.
@@ -106,11 +102,7 @@ class Square(Particle):
         return 1
 
 
-class Triangle(Particle):
-    """
-    Square lattice class.
-    """
-
+class Triangle(Particle):  # TODO: update names of getBravais...
     def __init__(self, spacing, radius, wp, loss, neighbours, scaling):
         self.spacing = spacing
         self.scaling = scaling
@@ -130,7 +122,7 @@ class Triangle(Particle):
         """
         return [Particle(self.radius, self.wp, self.loss, 0, 0)]
 
-    def getNeighbours(self):
+    def getBravais(self):
         """
         Function to create square lattice structure, ignoring the origin.
         """
@@ -143,7 +135,7 @@ class Triangle(Particle):
 
         return np.array(lattice_points)
 
-    def getReciprocalLattice(self, size):
+    def getBrillouinZone(self, size):
         """
         Create set of (x,y) coordinates for path in reciprocal space.
 
@@ -170,7 +162,7 @@ class Triangle(Particle):
         return 1
 
 
-class SimpleHoneycomb(Particle):
+class SimpleHoneycomb(Particle):  # TODO: update names of getBravais...
     def __init__(self, spacing, radius, wp, loss, neighbours, scaling):
         self.spacing = spacing
         self.scaling = scaling
@@ -186,7 +178,7 @@ class SimpleHoneycomb(Particle):
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
         return particle_list
 
-    def getNeighbours(self):
+    def getBravais(self):
         neighbour_list = []
         number = self.neighbours
         t1 = np.array([self.scaling*1.5*self.spacing, self.scaling*self.spacing*np.sqrt(3)/2])
@@ -197,7 +189,7 @@ class SimpleHoneycomb(Particle):
 
         return np.array(neighbour_list)
 
-    def getReciprocalLattice(self, size):
+    def getBrillouinZone(self, size):
         """
         Create set of (x,y) coordinates for path in reciprocal space.
 
@@ -232,6 +224,23 @@ class Honeycomb(Particle):
         self.loss = loss
         Particle.__init__(self, radius, wp, loss)
 
+    def getLatticeVectors(self):
+        b = 3* self.spacing * self.scaling
+
+        a1 = np.array([b, 0])
+        a2 = np.array([b/2, np.sqrt(3)*b/2])
+
+        return a1, a2
+
+    def getReciprocalVectors(self):
+        a1, a2 = self.getLatticeVectors()
+        R = np.array([[0, -1], [1, 0]])
+
+        b1 = 2*np.pi * np.dot(R, self.a2)/np.dot(self.a1, np.dot(R, self.a2))
+        b2 = 2*np.pi * np.dot(R, self.a1)/np.dot(self.a2, np.dot(R, self.a1))
+
+        return b1, b2
+
     def getUnitCell(self):
         """Honeycomb has 6 particle unit cell"""
         particle_list = []
@@ -239,7 +248,7 @@ class Honeycomb(Particle):
             particle_list.append(Particle(self.radius, self.wp, self.loss, x, y))
         return np.array(particle_list)
 
-    def getNeighbours(self):
+    def getLattice(self, _type):
         """
         Create a repeated symmetrical list of points for the honeycomb lattice
         supercell structure. Returns a list of supercell positions (points).
@@ -247,10 +256,10 @@ class Honeycomb(Particle):
         points = []
         number = self.neighbours
 
-        b = 3 * self.spacing * self.scaling
-
-        t1 = np.array([b, 0])  # 1st Bravais lattice vector
-        t2 = np.array([b/2, np.sqrt(3)*b/2])  # 2nd Bravais lattice vector
+        if _type is "bravais":
+            t1, t2 = self.getLatticeVectors()
+        elif _type is "reciprocal":
+            t1, t2 = self.getReciprocalVectors()
 
         for n in np.arange(-number, number+1):
             if n < 0:
@@ -265,7 +274,7 @@ class Honeycomb(Particle):
 
         return np.array(points)
 
-    def getReciprocalLattice(self, size):
+    def getBrillouinZone(self, size):
         """
         Create set of (x,y) coordinates for path in reciprocal space.
 
@@ -408,6 +417,128 @@ class Interaction:
         w_val = w[0] + 1j*w[1]
         result = np.linalg.det(self.eigenproblem(w_val))
         return [result.real, result.imag]
+
+
+class Ewald:
+    def __init__(self, ewald, j_max, q, lattice, neighbours, position):
+        self.q = q
+        self.lattice = lattice
+        self.bravais = lattice.getLattice(neighbours, "bravais")
+        self.reciprocal = lattice.getLattice(neighbours, "reciprocal")
+        self.pos = position
+        self.E = ewald
+        self.j_max = j_max
+
+    def ewaldG1(self, w):
+        k = w*ev
+        a1, a2 = self.lattice.getBravaisVectors()
+
+        area = float(np.cross(a1, a2))
+        _sum = 0
+        for G_pos in self.reciprocal:
+            _sum += -(1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(self.q+G_pos)**2)/(4*self.E**2)))/( np.linalg.norm(self.q+G_pos)**2 - k**2)
+        return _sum
+
+    def integralFunc(self, separation, w):
+        k = w*ev
+        _sum = 0
+        for j in range(0, self.j_max+1):
+            _sum += (1./np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j+1, separation**2*self.E**2)
+        return _sum
+
+    def ewaldG2(self, w):
+        _sum = 0
+        for R_pos in self.bravais:
+            distance = np.linalg.norm(self.pos - R_pos)
+            _sum += -(1./(4*np.pi)) * np.exp(1j * np.dot(self.q, R_pos)) * self.integralFunc(distance, w)
+        return _sum
+
+    def monopolarSum(self, w):
+        return self.ewaldG1(w) + self.ewaldG2(w)
+
+    def ewaldG2_deriv(self, w, type):
+        k = w*ev
+        _sum = 0
+        for R_pos in self.bravais:
+            rho = self.pos - R_pos
+            n_rho = np.linalg.norm(rho)
+            rho_E_sq = n_rho**2 * self.E**2  # rho^2 eta^2 product
+            if type is 'xx':
+                for j in range(0, self.j_max + 1):
+                    if j == 0:
+                        _sum += (1/np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-self.q[0]**2 * sp.special.expn(j+1, rho_E_sq) - (2*self.E**2 + 4j*self.E**2*self.q[0]*rho[0])*sp.special.expn(j, rho_E_sq))
+                    else:
+                        _sum += (1/np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-self.q[0]**2 * sp.special.expn(j+1, rho_E_sq) - (2*self.E**2 + 4j*self.E**2*self.q[0]*rho[0])*sp.special.expn(j, rho_E_sq) +
+                        4*self.E**4*rho[0]**2*sp.special.expn(j-1, rho_E_sq))
+                _sum += (4/n_rho**4)*rho[0]**2*(rho_E_sq + 1)*np.exp(-rho_E_sq)
+            elif type is 'yy':
+                for j in range(0, self.j_max + 1):
+                    if j == 0:
+                        _sum += (1/np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-self.q[1]**2 * sp.special.expn(j+1, rho_E_sq) - (2*self.E**2 + 4j*self.E**2*self.q[1]*rho[1])*sp.special.expn(j, rho_E_sq))
+                    else:
+                        _sum += (1/np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-self.q[1]**2 * sp.special.expn(j+1, rho_E_sq) - (2*self.E**2 + 4j*self.E**2*self.q[1]*rho[1])*sp.special.expn(j, rho_E_sq) + 4*self.E**4*rho[1]**2*sp.special.expn(j-1, rho_E_sq))
+                _sum += (4/n_rho**4)*rho[1]**2*(rho_E_sq + 1)*np.exp(-rho_E_sq)
+            elif type is 'xy':
+                for j in range(0, self.j_max + 1):
+                    if j == 0:
+                        _sum += (1/np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-self.q[0]*self.q[1] * sp.special.expn(j+1, rho_E_sq) - 2j*self.E**2*(self.q[0]*rho[1] + self.q[1]*rho[0])*sp.special.expn(j, rho_E_sq))
+                    else:
+                        _sum += (1/np.math.factorial(j)) * (k/(2*self.E))**(2*j) * (-self.q[0]*self.q[1] * sp.special.expn(j+1, rho_E_sq) - 2j*self.E**2*(self.q[0]*rho[1] + self.q[1]*rho[0])*sp.special.expn(j, rho_E_sq) + 4*self.E**4*rho[0]*rho[1]*sp.special.expn(j-1, rho_E_sq))
+                _sum += (4/n_rho**4)*rho[0]*rho[1]*(rho_E_sq + 1)*np.exp(-rho_E_sq)
+            _sum = _sum*(1/(4*np.pi))*np.exp(1j*np.dot(self.q, R_pos))
+        return -_sum
+
+    def ewaldG1_deriv(self, w, type):
+        k = w*ev
+        a1, a2 = self.lattice.getBravaisVectors()
+
+        area = float(np.cross(a1, a2))
+        _sum = 0
+        for G_pos in self.reciprocal:
+            if type is 'xx':
+                _sum += -(self.q+G_pos)[0]**2 * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
+            elif type is 'yy':
+                _sum += -(self.q+G_pos)[1]**2 * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
+            if type is 'xy':
+                _sum += -(self.q+G_pos)[0]*(self.q+G_pos)[1] * (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
+        return -_sum
+
+    def derivSum(self, w):
+        k = w*ev
+        pre_factor = k**2*self.monopolarSum(w)
+        xx_comp = pre_factor + self.ewaldG1_deriv(w, 'xx') + self.ewaldG2_deriv(w, 'xx')
+        xy_comp = self.ewaldG1_deriv(w, 'xy') + self.ewaldG2_deriv(w, 'xy')
+        yy_comp = pre_factor + self.ewaldG1_deriv(w, 'yy') + self.ewaldG2_deriv(w, 'yy')
+        return np.array([[xx_comp, xy_comp], [xy_comp, yy_comp]])
+
+    def interactionMatrix(self, w):
+        intracell = self.cell.getUnitCell()
+        intercell = self.bravais
+        cell_size = self.cell.getCellSize()
+        indices = np.arange(cell_size)
+
+        matrix_size = cell_size*2
+
+        if cell_size == 1:  # No interactions within the cell, only with other cells
+            H = sum([self.green(w, inter) * np.exp(1j * np.dot(self.q, inter)) for inter in intercell])
+
+        else:  # Interactions within and with other cells
+            H = np.zeros((matrix_size, matrix_size), dtype=np.complex_)
+
+            for n, m in itertools.combinations(indices, 2):
+                # Loop over (n, m) = (0, 1), (0, 2)... (1, 2), (1, 3)... (2, 3), (2, 4)...
+                # More efficient than considering repeated interactions.
+                H[2*n:2*n+2, 2*m:2*m+2] = sum([self.derivSum(w, -intracell[n].pos + intracell[m].pos) * np.exp(1j * np.dot(-self.q, -intracell[n].pos + intracell[m].pos - inter)) for inter in intercell])
+                H[2*m:2*m+2, 2*n:2*n+2] = sum([self.derivSum(w, -intracell[m].pos + intracell[n].pos) * np.exp(1j * np.dot(-self.q, -intracell[m].pos + intracell[n].pos - inter)) for inter in intercell])
+
+            for n in indices:
+                to_sum = []
+                for inter in intercell:
+                    if np.linalg.norm(inter) != 0:  # ignore (0,0) position
+                        to_sum.append(self.green(w, inter) * np.exp(-1j * np.dot(self.q, inter)))
+                H[2*n:2*n+2, 2*n:2*n+2] = sum(to_sum)
+
+        return H
 
 
 def determinant_solver(w, cell, resolution):
