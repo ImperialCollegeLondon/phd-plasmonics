@@ -1,5 +1,9 @@
 #! /usr/bin/python3
 
+"""
+Small script for testing Ewald's method on interactions via a 2D Green's function on a 2D lattice
+"""
+
 import numpy as np
 import scipy as sp
 from scipy import special  # used for hankel functions
@@ -13,44 +17,62 @@ ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)
 
 
 class Lattice:
+    """
+    Quick class to set up a lattice defined by two lattice vectors a1, a2.
+    """
     def __init__(self, a1, a2):
-        R = np.array([[0, -1],[1, 0]])
+        R = np.array([[0, -1],[1, 0]])  # Rotation matrix for defining reciprocal lattice vectors
         self.a1 = a1
         self.a2 = a2
         self.b1 = 2*np.pi * np.dot(R, self.a2)/np.dot(self.a1, np.dot(R, self.a2))
         self.b2 = 2*np.pi * np.dot(R, self.a1)/np.dot(self.a2, np.dot(R, self.a1))
 
     def genBravais(self, number, origin):
+        """
+        Returns a list of Bravais lattice points. Origin is True or False depending on whether [0,0] point is required.
+        """
         bravais = []
         neighbours = np.arange(-number, number + 1)
         for n, m in itertools.product(neighbours, repeat=2):
             if origin is False:
-                if n != 0 or m != 0:
+                if n != 0 or m != 0:  # to exclude origin
                     bravais.append(n*np.array(self.a1) + m*np.array(self.a2))
             else:
                     bravais.append(n*np.array(self.a1) + m*np.array(self.a2))
         return bravais
 
     def genReciprocal(self, number, origin):
+        """
+        Returns a list of reciprocal lattice points. Origin is True or False depending on whether [0,0] point is required.
+        """
         reciprocal = []
         neighbours = np.arange(-number, number + 1)
 
         for n, m in itertools.product(neighbours, repeat=2):
             if origin is False:
-                if n != 0 or m != 0:
+                if n != 0 or m != 0:  # to exclude origin
                     reciprocal.append(n*np.array(self.b1) + m*np.array(self.b2))
             else:
                     reciprocal.append(n*np.array(self.b1) + m*np.array(self.b2))
         return reciprocal
 
     def getBravaisVectors(self):
+        """
+        Returns Bravais lattice vectors.
+        """
         return [self.a1, self.a2]
 
     def getReciprocalVectors(self):
+        """
+        Returns reciprocal lattice vectors.
+        """
         return [self.b1, self.b2]
 
 
 class Interaction:
+    """
+    Defines interactions between particles via 2D Green's function.
+    """
     def __init__(self, q, lattice, neighbours, position, origin):
         """
         args:
@@ -65,6 +87,9 @@ class Interaction:
         self.pos = position
 
     def monopolar_green(self, w, distance):
+        """
+        Usual Green's function term in 2D.
+        """
         k = w*ev
         return 0.25j*sp.special.hankel1(0, k*np.linalg.norm(distance))*np.exp(1j*np.dot(self.q, distance))
 
@@ -73,14 +98,20 @@ class Interaction:
         return self.monopolar_green(*args)
 
     def monopolarSum(self, w):
+        """
+        Calculates sums for monopolar Green's function over Bravais lattice.
+        """
         results = []
-        pool = Pool()
+        pool = Pool()  # multiprocessing speeds things up
         values = [(w, np.array(self.pos-i)) for i in self.bravais]
         results.append(pool.map(self._monopolar_green, values))
         pool.close()
         return sum(results[0])
 
     def green_dyadic(self, w, distance):
+        """
+        Dyadic Green's function term in 2D, for dipolar sources.
+        """
         k = w*ev
 
         x = distance[0]
@@ -103,9 +134,13 @@ class Interaction:
         return np.array([xx_type, xy_type, yy_type])
 
     def _green_dyadic(self, args):
+        # wrapper for multiprocessing
         return self.green_dyadic(*args)
 
     def dyadicSum(self, w):
+        """
+        Calculates sums for dyadic Green's function over Bravais lattice.
+        """
         results = []
         pool = Pool()
         values = [(w, np.array(self.pos-i)) for i in self.bravais]
@@ -115,6 +150,10 @@ class Interaction:
 
 
 class Ewald:
+    # This class could benefit from some cleaning up as a lot of the expressions are long and messy.
+    """
+    Contains all the terms required in Ewald's summation.
+    """
     def __init__(self, ewald, j_max, q, lattice, neighbours, position):
         self.q = q
         self.lattice = lattice
@@ -258,6 +297,9 @@ class Ewald:
 
 
 def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
+    """
+    Plots graphs of monopolar lattice sums. Returns graph of non-converging original method and converging sums with Ewald's method.
+    """
     results = []
     ewald_results = []
     loop_range = range(1, neighbour_range+1)
@@ -301,6 +343,9 @@ def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
 
 
 def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
+    """
+    Plots graphs of dipolar lattice sums. Returns graph of non-converging original method and converging sums with Ewald's method.
+    """
     results = []
     ewald_results = []
     loop_range = range(1, neighbour_range+1)
@@ -342,6 +387,7 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
     print("convergent ewald result: {}".format(ewald_results[neighbour_range-2]))
 
     plt.show()
+
 
 if __name__ == '__main__':
     ev = (1.602*10**-19 * 2 * np.pi)/(6.626*10**-34 * 2.997*10**8)
