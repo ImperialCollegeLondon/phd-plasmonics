@@ -1,4 +1,4 @@
-#! python3
+#! /usr/bin/python3
 
 """
 Small script for testing Ewald's method on interactions via a 2D Green's function on a 2D lattice
@@ -101,12 +101,17 @@ class Interaction:
         """
         Calculates sums for monopolar Green's function over Bravais lattice.
         """
-        results = []
-        pool = Pool()  # multiprocessing speeds things up
-        values = [(w, np.array(self.pos - i), i) for i in self.bravais]
-        results.append(pool.map(self._monopolar_green, values))
-        pool.close()
-        return sum(results[0])
+        # results = []
+        # pool = Pool()  # multiprocessing speeds things up
+        # values = [(w, np.array(self.pos - i), i) for i in self.bravais]
+        # results.append(pool.map(self._monopolar_green, values))
+        # pool.close()
+        # return sum(results[0])
+
+        _sum = 0
+        for i in self.bravais:
+            _sum += self.monopolar_green(w, np.array(self.pos - i), i)
+        return _sum
 
     def green_dyadic(self, w, distance, lat_vec):
         """
@@ -117,37 +122,56 @@ class Interaction:
         x = distance[0]
         y = distance[1]
         R = np.linalg.norm(distance)
+        theta = np.angle(x + 1j*y)
         arg = k*R
 
-        xx_type = 0.25j * k**2 * (
-        (y**2/R**2) * sp.special.hankel1(0,arg) +
-        (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
-        )
+        xx_type = 0.25j * (k**2 *sp.special.hankel1(0,arg) - ((k**2*x**2)/(2*R**2))*(sp.special.hankel1(0, arg) - sp.special.hankel1(2, arg)) + (k*x**2/R**3) * sp.special.hankel1(1, arg) - (k/R)*sp.special.hankel1(1, arg))
 
-        yy_type = 0.25j * k**2 * (
-        (x**2/R**2) * sp.special.hankel1(0,arg) -
-        (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
-        )
+        xy_type = 0.25j * ((k**2*x*y)/(2*R**2))*sp.special.hankel1(2, arg)
 
-        xy_type = 0.25j * k**2 * x*y/R**2 * sp.special.hankel1(2,arg)
+        yy_type = 0.25j * (k**2 * sp.special.hankel1(0,arg) - ((k**2*y**2)/(2*R**2))*(sp.special.hankel1(0, arg) - sp.special.hankel1(2, arg)) + (k*y**2/R**3) * sp.special.hankel1(1, arg) - (k/R)*sp.special.hankel1(1, arg))
 
-        return np.array([xx_type, xy_type, yy_type])*np.exp(1j*np.dot(self.q, lat_vec))
+        # xx_type = 0.25j * k**2 * (
+        # (y**2/R**2) * sp.special.hankel1(0,arg) +
+        # (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
+        # )
+        #
+        # yy_type = 0.25j * k**2 * (
+        # (x**2/R**2) * sp.special.hankel1(0,arg) -
+        # (x**2 - y**2)/(k*R**3) * sp.special.hankel1(1, arg)
+        # )
+        #
+        # xy_type = 0.25j * k**2 * x*y/R**2 * sp.special.hankel1(2,arg)
+        # a = 0.125j * k**2 * sp.special.hankel1(0, arg)
+        # b = 0.125j * k**2 * sp.special.hankel1(2, arg) * np.sin(2*theta)
+        # c = 0.125j * k**2 * sp.special.hankel1(2, arg) * np.cos(2*theta)
+        #
+        # xx_type = a + c
+        # xy_type = b
+        # yy_type = a - c
+
+        return np.array([xx_type, xy_type, yy_type])
 
     def _green_dyadic(self, args):
         # wrapper for multiprocessing
         return self.green_dyadic(*args)
 
-    def dyadicSum(self, w):
-        """
-        Calculates sums for dyadic Green's function over Bravais lattice.
-        """
-        results = []
-        pool = Pool()
-        values = [(w, np.array(self.pos + i), i) for i in self.bravais]
-        results.append(pool.map(self._green_dyadic, values))
-        pool.close()
-        return sum(results[0])
+    # def dyadicSum(self, w):
+    #     """
+    #     Calculates sums for dyadic Green's function over Bravais lattice.
+    #     """
+    #     results = []
+    #     pool = Pool()
+    #     values = [(w, np.array(self.pos - i), i) for i in self.bravais]
+    #     results.append(pool.map(self._green_dyadic, values))
+    #     pool.close()
+    #     return sum(results[0])
 
+    def dyadicSum(self, w):
+        _sum = 0
+        for i in self.bravais:
+            _sum += self.green_dyadic(w, np.array(self.pos - i), i)*np.exp(1j*np.dot(self.q, i))
+        return _sum
 
 class Ewald:
     # This class could benefit from some cleaning up as a lot of the expressions are long and messy.
@@ -172,7 +196,6 @@ class Ewald:
         _sum = 0
         for G_pos in self.reciprocal:
             _sum += (1./area) * (np.exp(1j*np.dot(self.q+G_pos, self.pos)) * np.exp((k**2 - np.linalg.norm(self.q+G_pos)**2)/(4*self.E**2)))/(np.linalg.norm(self.q+G_pos)**2 - k**2)
-
         return _sum
 
     def integralFunc(self, separation, w):
@@ -188,110 +211,223 @@ class Ewald:
         for R_pos in self.bravais:
             distance = np.linalg.norm(self.pos - R_pos)
             _sum += (1./(4*np.pi)) * np.exp(1j * np.dot(self.q, R_pos)) * self.integralFunc(distance, w)
+
+
         return _sum
 
     def monopolarSum(self, w):
         return self.ewaldG1(w) + self.ewaldG2(w)
 
-    def secondOrderG1(self, w, _type):
+    def dyadicEwaldG1(self, w, _type):
         k = w*ev
         a1, a2 = self.lattice.getBravaisVectors()
-
         area = float(np.cross(a1, a2))
         _sum = 0
+        if _type is "xx":
+            for G_pos in self.reciprocal:
+                beta = self.q + G_pos
+                beta_norm = np.linalg.norm(beta)
 
-        for G_pos in self.reciprocal:
-            beta = self.q + G_pos
-            beta_norm = np.linalg.norm(beta)
-            temp_sum = (1/area)*((beta_norm**2)*np.exp(1j*np.dot(beta, self.pos))*np.exp((k**2-beta_norm**2)/(4*self.E**2)))/(k**2 - beta_norm**2)
+                _sum += (k**2 + beta[0]**2) * (1./area) * (np.exp(1j*np.dot(beta, self.pos)) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)))/(beta_norm**2 - k**2)
+        elif _type is "xy":
+            for G_pos in self.reciprocal:
+                beta = self.q + G_pos
+                beta_norm = np.linalg.norm(beta)
 
-            psi = np.angle(beta[0] + 1j*beta[1])
-            if _type is 'cos':
-                 temp_sum = temp_sum * np.cos(2*psi)
-            elif _type is 'sin':
-                 temp_sum = temp_sum * np.sin(2*psi)
-            _sum += temp_sum
-        return (1j/8) * _sum
+                _sum += (beta[0]*beta[1]) * (1./area) * (np.exp(1j*np.dot(beta, self.pos)) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)))/(beta_norm**2 - k**2)
+        elif _type is "yy":
+            for G_pos in self.reciprocal:
+                beta = self.q + G_pos
+                beta_norm = np.linalg.norm(beta)
+                _sum += (k**2 + beta[1]**2) * (1./area) * (np.exp(1j*np.dot(beta, self.pos)) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)))/(beta_norm**2 - k**2)
+        return _sum
 
-    def secondOrderG2(self, w, _type):
+    def dyadicEwaldG2(self, w, _type):
         k = w*ev
         _sum = 0
-        for R_pos in self.bravais:
-            rho = self.pos - R_pos
-            rho_norm = np.linalg.norm(rho)
-            temp_sum = (4./(1j*np.pi)) * (rho_norm)**2 * self.E**4 * np.exp(1j * np.dot(self.q, R_pos)) * self.secondOrderIntegralG2(rho_norm, w)
+        if _type is "xx":
+            for R_pos in self.bravais:
+                rho = self.pos - R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[0]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
 
-            psi = np.angle(rho[0] + 1j*rho[1])
+        elif _type is "xy":
+            for R_pos in self.bravais:
+                rho = self.pos - R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += np.exp(1j * np.dot(self.q, R_pos)) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2) * (4*rho[0]*rho[1]/rho_norm**2)*(rho_norm**2*self.E**2 + 1)))
 
-            if _type is 'cos':
-                temp_sum = temp_sum * np.cos(2*psi)
-            elif _type is 'sin':
-                temp_sum = temp_sum * np.sin(2*psi)
-            _sum += temp_sum
-        return (1j/8) * _sum
+        elif _type is "yy":
+            for R_pos in self.bravais:
+                rho = self.pos - R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[1]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
+        return _sum/(4*np.pi)
 
-    def secondOrderIntegralG2(self, separation, w):
+    def dyadicIntegralFunc(self, w, rho, _type):
         k = w*ev
-        _sum = (separation**2*self.E**2 + 1)*np.exp(-separation**2*self.E**2)/(separation**4 * self.E**4)
-        for j in range(1, self.j_max+1):
-            _sum += (1./np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j-1, separation**2*self.E**2)
+        _sum = 0
+        rho_norm = np.linalg.norm(rho)
+        if _type is "xx":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*rho[0]**2*self.E**4*sp.special.expn(j-1, rho_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, rho_norm**2*self.E**2))
+
+        elif _type is "xy":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*rho[0]*rho[1]*self.E**4*sp.special.expn(j-1, rho_norm**2*self.E**2))
+
+        elif _type is "yy":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*rho[1]**2*self.E**4*sp.special.expn(j-1, rho_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, rho_norm**2*self.E**2))
+
         return _sum
 
     def dyadicSumEwald(self, w):
         k = w*ev
-        a = 0.5*self.monopolarSum(w)
+        xx_comp = (self.dyadicEwaldG1(w, "xx") + self.dyadicEwaldG2(w, "xx") + k**2*self.ewaldG2(w))
+        xy_comp = (self.dyadicEwaldG1(w, "xy") + self.dyadicEwaldG2(w, "xy"))
+        yy_comp = (self.dyadicEwaldG1(w, "yy") + self.dyadicEwaldG2(w, "yy") + k**2*self.ewaldG2(w))
+        return [xx_comp, xy_comp, yy_comp]
 
-        b = self.secondOrderG1(w, 'sin') + self.secondOrderG2(w, 'cos')
-
-        c = self.secondOrderG1(w, 'cos') + self.secondOrderG2(w, 'sin')
-        return [a+b, c, a-b]
-
-    def t0(self, n, w):
+    def t0(self, w, n):
         k = w*ev
         if n == 0:
-            return -1 - (1j/np.pi) * sp.special.expi(k**2/(4*self.E**2))
+            return (-1 - (1j/np.pi)*sp.special.expi(k**2/(4*self.E**2)))
         else:
             return 0
 
-    def t1(self, n, w):
+    def t1(self, w, n):
         k = w*ev
+        _sum = 0
         a1, a2 = self.lattice.getBravaisVectors()
         area = float(np.cross(a1, a2))
-        _sum = 0
         for G_pos in self.reciprocal:
             beta = self.q + G_pos
-            beta_n = np.linalg.norm(beta)
-            angle = np.angle(beta[0] + 1j*beta[1])  # for some reason no arg func for real vectors, so have to convert to complex then find argument from there
-            _sum += ((beta_n/k)**n)/(k**2 - beta_n**2) * np.exp((k**2 - beta_n**2)/(4*self.E**2)) * np.exp(-1j*n*angle)
-        return (4*1j**(n+1)/area) * _sum
+            beta_norm = np.linalg.norm(beta)
 
-    def t2(self, n, w):
+            phi = np.angle(beta[0] + 1j*beta[1])
+            _sum += (beta_norm/k)**n * 1/(k**2 - beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * np.exp(-1j*n*phi)
+        return -(4*1j**(n+1)/area) * _sum
+
+    def t2(self, w, n):
         k = w*ev
-        reduced_bravais = self.lattice.genBravais(self.neighbours, False)
         _sum = 0
-        for R_pos in reduced_bravais:
-            alpha = np.angle(R_pos[0] + 1j*R_pos[1])  # for some reason no arg func for real vectors, so have to convert to complex then find argument from there
-            _sum += np.exp(1j*np.dot(self.q, R_pos)) * np.exp(-1j*n*alpha) * (np.linalg.norm(R_pos)/k)**n * self.loop_j_func(w, R_pos, n)
-        return -2**(n+1)*1j/np.pi * _sum
+        for R_pos in self.lattice.genBravais(self.neighbours, False):
+            R_norm = np.linalg.norm(R_pos)
+            alpha = np.angle(R_pos[0] + 1j*R_pos[1])
 
-    def loop_j_func(self, w, dist, n):
+            _sum += np.exp(1j*np.dot(self.q, R_pos)) * np.exp(-1j*n*alpha) * (R_norm/k)**n * self.t2IntegralFunc(R_norm, w)
+        if n < 0:
+            return -np.conjugate(-2**n*(1j/np.pi) * _sum)
+        else:
+            return -2**n*(1j/np.pi) * _sum
+
+    def t2IntegralFunc(self, dist, w):
         k = w*ev
         _sum = 0
         for j in range(0, self.j_max+1):
-            _sum += 1/(np.math.factorial(j)) * (k/2)**(2*j) * self.E**(2*n-2*j) * sp.special.expn(j+1-n, np.linalg.norm(dist)**2 * self.E**2)
-        return 2*_sum
+            _sum = 1/(np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j+1, dist**2*self.E**2)
+        return _sum
+
+    def gammaFunc(self, dist, w, n):
+        k = w*ev
+        _sum = 0
+        for j in range(0, n):
+            _sum = 1/(np.math.factorial(j)) * (k/2)**(2*j) * dist**(2*j-2*n) * sp.special.gammaincc(n-j, self.E)
+        return _sum
+
+    def t2Dyadic(self, w, n, _type):
+        k = w*ev
+        _sum = 0
+        if _type is "xx":
+            for R_pos in self.lattice.genBravais(self.neighbours, False):
+                R_norm = np.linalg.norm(R_pos)
+
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.t2DyadicIntegralFunc(w, R_pos, _type) + (np.exp(-R_norm**2*self.E**2)/R_norm**2)*(((4*R_pos[0]**2)/R_norm**2)*(R_norm**2*self.E**2 + 1) - 2))
+
+        elif _type is "xy":
+            for R_pos in self.lattice.genBravais(self.neighbours, False):
+                R_norm = np.linalg.norm(R_pos)
+
+                _sum += np.exp(1j * np.dot(self.q, R_pos)) * (self.t2DyadicIntegralFunc(w, R_pos, _type) + (np.exp(-R_norm**2*self.E**2) * (4*R_pos[0]*R_pos[1]/R_norm**2)*(R_norm**2*self.E**2 + 1)))
+
+        elif _type is "yy":
+            for R_pos in self.lattice.genBravais(self.neighbours, False):
+                R_norm = np.linalg.norm(R_pos)
+
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.t2DyadicIntegralFunc(w, R_pos, _type) + (np.exp(-R_norm**2*self.E**2)/R_norm**2)*(((4*R_pos[1]**2)/R_norm**2)*(R_norm**2*self.E**2 + 1) - 2))
+        return -0.25**n*(1j/np.pi) * _sum
+
+    def t2DyadicIntegralFunc(self, w , R_pos, _type):
+        k = w*ev
+        _sum = 0
+        R_norm = np.linalg.norm(R_pos)
+        if _type is "xx":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*R_pos[0]**2*self.E**4*sp.special.expn(j-1, R_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, R_norm**2*self.E**2))
+
+        elif _type is "xy":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*R_pos[0]*R_pos[1]*self.E**4*sp.special.expn(j-1, R_norm**2*self.E**2))
+
+        elif _type is "yy":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*R_pos[1]**2*self.E**4*sp.special.expn(j-1, R_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, R_norm**2*self.E**2))
+
+        return _sum
 
     def reducedLatticeSum(self, w):
-        return -0.25j * (self.t0(0, w) + self.t1(0, w) + self.t2(0, w))
-
-    def reducedDyadicLatticeSum(self, w):
         k = w*ev
-        pre_factor = k**2*self.reducedLatticeSum(w)
-        xx_comp = pre_factor
-        xy_comp = 0
-        yy_comp = pre_factor
+        
+        _sum = 0
+        for n in [0]:
+            _sum += self.t0(w, n) + self.t1(w, n) + self.t2(w, n)
+            #print("n={}, t0={}, t1={}, t2={}".format(n, self.t0(w, n), self.t1(w, n), self.t2(w, n)))
+        return (0.25j)*_sum
+
+    def dyadicReducedSumEwald(self, w):
+        k = w*ev
+        n=0
+        xx_comp = k**2 * (self.t2Dyadic(w, n, "xx") + self.reducedLatticeSum(w))
+        xy_comp = k**2 * self.t2Dyadic(w, n, "xy")
+        yy_comp = k**2 * (self.t2Dyadic(w, n, "yy") + self.reducedLatticeSum(w))
         return [xx_comp, xy_comp, yy_comp]
 
+    def testDyadicEwaldG2(self, w, _type):
+        k = w*ev
+        _sum = 0
+        if _type is "xx":
+            for R_pos in self.lattice.genBravais(self.neighbours, False):
+                rho = R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[0]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
+
+        elif _type is "xy":
+            for R_pos in self.lattice.genBravais(self.neighbours, False):
+                rho = R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += np.exp(1j * np.dot(self.q, R_pos)) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2) * (4*rho[0]*rho[1]/rho_norm**2)*(rho_norm**2*self.E**2 + 1)))
+
+        elif _type is "yy":
+            for R_pos in self.lattice.genBravais(self.neighbours, False):
+                rho = R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[1]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
+        return _sum/(4*np.pi)
+
+    def testEwaldG2(self, w):
+        _sum = 0
+        for R_pos in self.lattice.genBravais(self.neighbours, False):
+            distance = np.linalg.norm(R_pos)
+            _sum += (1./(4*np.pi)) * np.exp(1j * np.dot(self.q, R_pos)) * self.integralFunc(distance, w)
+        return _sum
+
+    def testDyadicSumEwald(self, w):
+        k = w*ev
+        xx_comp = (self.dyadicEwaldG1(w, "xx") + self.testDyadicEwaldG2(w, "xx") + k**2*self.testEwaldG2(w))
+        xy_comp = (self.dyadicEwaldG1(w, "xy") + self.testDyadicEwaldG2(w, "xy"))
+        yy_comp = (self.dyadicEwaldG1(w, "yy") + self.testDyadicEwaldG2(w, "yy") + k**2*self.testEwaldG2(w))
+        return [xx_comp, xy_comp, yy_comp]
 
 def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
     """
@@ -356,14 +492,14 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
         print("Sum excluding origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, False).dyadicSum(wp))
-            ewald_results.append(Ewald(2*np.pi/a, 5, q, lattice, i, pos).reducedDyadicLatticeSum(wp))
+            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos).testDyadicSumEwald(wp))
             print(i**2-1)
         print("done")
     else:
         print("Sum including origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, True).dyadicSum(wp))
-            ewald_results.append(Ewald(2*np.pi/a, 5, q, lattice, i, pos).dyadicSumEwald(wp))
+            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos).dyadicSumEwald(wp))
             print(i**2-1)
         print("done")
 
@@ -397,8 +533,9 @@ if __name__ == '__main__':
     loss = 0.01
     a1 = np.array([0, a])
     a2 = np.array([a, 0])
-    pos = np.array([0.01*a, 0])
-    q = np.array([83775804.0957278, 0])
+    pos = np.array([0, 0])
+    q = np.array([83775804, 837758040])
+    #83775804.0957278
 
-    testDyadicSum(a1, a2, 50, q, wp, pos)
+    testDyadicSum(a1, a2, 20, q, wp, pos)
     #testLatticeSum(a1, a2, 50, q, wp, pos)

@@ -491,107 +491,80 @@ class Ewald:
     def monopolarSum(self, w):
         return self.ewaldG1(w) + self.ewaldG2(w)
 
-    def secondOrderG1(self, w, _type):
+    def dyadicEwaldG1(self, w, _type):
         k = w*ev
         a1, a2 = self.lattice.getLatticeVectors()
-
         area = float(np.cross(a1, a2))
         _sum = 0
+        if _type is "xx":
+            for G_pos in self.lattice.getLattice('reciprocal', True):
+                beta = self.q + G_pos
+                beta_norm = np.linalg.norm(beta)
 
-        for G_pos in self.lattice.getLattice('reciprocal', True):
-            beta = self.q + G_pos
-            beta_norm = np.linalg.norm(beta)
-            temp_sum = (1/area)*(beta_norm**2)*np.exp(1j*np.dot(beta, self.pos))*np.exp((k**2-beta_norm**2)/(4*self.E**2))/(k**2 - beta_norm**2)
+                _sum += (k**2 + beta[0]**2) * (1./area) * (np.exp(1j*np.dot(beta, self.pos)) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)))/(beta_norm**2 - k**2)
+        elif _type is "xy":
+            for G_pos in self.lattice.getLattice('reciprocal', True):
+                beta = self.q + G_pos
+                beta_norm = np.linalg.norm(beta)
 
-            psi = np.angle(beta[0] + 1j*beta[1])
-
-            if _type is 'cos':
-                 temp_sum = temp_sum * np.cos(2*psi)
-            elif _type is 'sin':
-                 temp_sum = temp_sum * np.sin(2*psi)
-            _sum += temp_sum
-        return (1/8*np.pi) * _sum
-
-    def secondOrderG2(self, w, _type):
-        _sum = 0
-        for R_pos in self.lattice.getLattice('bravais', True):
-            rho = self.pos - R_pos
-            rho_norm = np.linalg.norm(rho)
-            temp_sum = (4./(1j*np.pi)) * (rho_norm)**2 * self.E**4 * np.exp(1j * np.dot(self.q, R_pos)) * self.secondOrderIntegralG2(rho_norm, w)
-
-            psi = np.angle(rho[0] + 1j*rho[1])
-
-            if _type is 'cos':
-                temp_sum = temp_sum * np.cos(2*psi)
-            elif _type is 'sin':
-                temp_sum = temp_sum * np.sin(2*psi)
-            _sum += temp_sum
-        return (1j/8) * _sum
-
-    def secondOrderIntegralG2(self, separation, w):
-        k = w*ev
-        _sum = (separation**2*self.E**2 + 1)*np.exp(-separation**2*self.E**2)/(separation**4 * self.E**4)
-        for j in range(1, self.j_max+1):
-            _sum += (1./np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j-1, separation**2*self.E**2)
+                _sum += (beta[0]*beta[1]) * (1./area) * (np.exp(1j*np.dot(beta, self.pos)) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)))/(beta_norm**2 - k**2)
+        elif _type is "yy":
+            for G_pos in self.lattice.getLattice('reciprocal', True):
+                beta = self.q + G_pos
+                beta_norm = np.linalg.norm(beta)
+                _sum += (k**2 + beta[1]**2) * (1./area) * (np.exp(1j*np.dot(beta, self.pos)) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)))/(beta_norm**2 - k**2)
         return _sum
 
-    def totalSum_incOrigin(self, w):
-        a = 0.5*self.monopolarSum(w)
-        b = (self.secondOrderG1(w, 'sin') + self.secondOrderG2(w, 'cos'))
-        c = (self.secondOrderG1(w, 'cos') + self.secondOrderG2(w, 'sin'))
-
-        return np.array([[a+b, c], [c, a-b]])
-
-    def t0(self, n, w):
-        k = w*ev
-        if n == 0:
-            return -1 - (1j/np.pi) * sp.special.expi(k**2/(4*self.E**2))
-        else:
-            return 0
-
-    def t1(self, n, w):
-        k = w*ev
-        a1, a2 = self.lattice.getLatticeVectors()
-        area = float(np.cross(a1, a2))
-        _sum = 0
-        for G_pos in self.lattice.getLattice('reciprocal', True):
-            beta = self.q + G_pos
-            beta_n = np.linalg.norm(beta)
-            angle = np.angle(beta[0] + 1j*beta[1])  # for some reason no arg func for real vectors, so have to convert to complex then find argument from there
-            _sum += ((beta_n/k)**n)/(k**2 - beta_n**2) * np.exp((k**2 - beta_n**2)/(4*self.E**2)) * np.exp(-1j*n*angle)
-        return ((4*1j**(n+1))/area) * _sum
-
-    def t2(self, n, w):
-        k = w*ev
-        reduced_bravais = self.lattice.getLattice('bravais', False)
-        _sum = 0
-        for R_pos in reduced_bravais:
-            alpha = np.angle(R_pos[0] + 1j*R_pos[1])  # for some reason no arg func for real vectors, so have to convert to complex then find argument from there
-            _sum += np.exp(1j*np.dot(self.q, R_pos)) * np.exp(-1j*n*alpha) * (np.linalg.norm(R_pos)/k)**n * self.loop_j_func(w, R_pos, n)
-        return -2**(n+1)*1j/np.pi * _sum
-
-    def loop_j_func(self, w, dist, n):
+    def dyadicEwaldG2(self, w, _type):
         k = w*ev
         _sum = 0
-        for j in range(0, self.j_max+1):
-            _sum += 1/(np.math.factorial(j)) * (k/2)**(2*j) * self.E**(2*n-2*j) * sp.special.expn(j+1-n, np.linalg.norm(dist)**2 * self.E**2)
-        return 2*_sum
+        if _type is "xx":
+            for R_pos in self.lattice.getLattice('bravais', True):
+                rho = self.pos - R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[0]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
 
-    def origSum_exOrigin(self, w):
-        return -0.25j * (self.t0(0, w) + self.t1(0, w) + self.t2(0, w))
+        elif _type is "xy":
+            for R_pos in self.lattice.getLattice('bravais', True):
+                rho = self.pos - R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += np.exp(1j * np.dot(self.q, R_pos)) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2) * (4*rho[0]*rho[1]/rho_norm**2)*(rho_norm**2*self.E**2 + 1)))
 
-    def dyadicSum_exOrigin(self, w):
+        elif _type is "yy":
+            for R_pos in self.lattice.getLattice('bravais', True):
+                rho = self.pos - R_pos
+                rho_norm =  np.linalg.norm(rho)
+                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[1]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
+        return _sum/(4*np.pi)
+
+    def dyadicIntegralFunc(self, w, rho, _type):
         k = w*ev
-        pre_factor = k**2*self.origSum_exOrigin(w)
-        xx_comp = pre_factor
-        xy_comp = 0
-        yy_comp = pre_factor
-        return np.array([[xx_comp, xy_comp], [xy_comp, yy_comp]])
+        _sum = 0
+        rho_norm = np.linalg.norm(rho)
+        if _type is "xx":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*rho[0]**2*self.E**4*sp.special.expn(j-1, rho_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, rho_norm**2*self.E**2))
+
+        elif _type is "xy":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*rho[0]*rho[1]*self.E**4*sp.special.expn(j-1, rho_norm**2*self.E**2))
+
+        elif _type is "yy":
+            for j in range(1, self.j_max+1):
+                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*rho[1]**2*self.E**4*sp.special.expn(j-1, rho_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, rho_norm**2*self.E**2))
+
+        return _sum
+
+    def dyadicSumEwald(self, w):
+        k = w*ev
+        xx_comp = (self.dyadicEwaldG1(w, "xx") + self.dyadicEwaldG2(w, "xx") + k**2*self.ewaldG2(w))
+        xy_comp = (self.dyadicEwaldG1(w, "xy") + self.dyadicEwaldG2(w, "xy"))
+        yy_comp = (self.dyadicEwaldG1(w, "yy") + self.dyadicEwaldG2(w, "yy") + k**2*self.ewaldG2(w))
+        return np.array([[xx_comp, xy_comp],[xy_comp, yy_comp]])
 
     def interactionMatrix(self, w):
         #if cell_size == 1:  # No interactions within the cell, only with other cells
-        H = self.totalSum_incOrigin(w)
-        print(H)
+        H = self.dyadicSumEwald(w)
         return H
 
     def eigenproblem(self, w):
@@ -648,11 +621,11 @@ if __name__ == "__main__":
     wmin = plasma_freq/np.sqrt(2) - 1.3
     wmax = plasma_freq/np.sqrt(2) + 1.3
 
-    resolution = 15
+    resolution = 60
 
     lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=10, scaling=1.0)
     # points = lattice.getLattice('bravais', True)
     # plt.scatter([i[0] for i in points],[i[1] for i in points])
     # plt.show()
     #Extinction(lattice, resolution, wmin, wmax).plotExtinction()
-    dirtyRootFinder(wmin, wmax, 4, lattice, resolution)
+    dirtyRootFinder(wmin, wmax, 3, lattice, resolution)
