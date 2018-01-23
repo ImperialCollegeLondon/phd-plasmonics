@@ -422,10 +422,13 @@ class Ewald:
         k = w*ev
 
         h_0 = (self.t0(w) + self.t1_lim(w, 0) + self.t2_lim(w, 0))
-        h_2 = (self.t0(w) + self.t1_lim(w, -2) + self.t2_lim(w, -2))
-        xx = -0.125j*h_0 - 0.125j*h_2
-        xy = -0.125j*h_2
-        return [xx, xy]
+        h_neg2 = (self.t1_lim(w, -2) + self.t2_lim(w, -2))  # H_2
+        h_pos2 = (self.t1_lim(w, 2) + self.t2_lim(w, 2))  # H_(-2)
+        print(h_neg2 - h_pos2)
+        xx = -0.125j*h_0 - 0.0625j*(h_neg2+h_pos2)
+        xy = -0.0625*(h_neg2-h_pos2)
+        yy = -0.125j*h_0 + 0.0625j*(h_neg2+h_pos2)
+        return [xx, xy, yy]
 
 def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
     """
@@ -480,7 +483,7 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
     results = []
     ewald_results = []
     loop_range = range(1, neighbour_range+1)
-    ewald_range = range(1,11)
+    ewald_range = range(1,12)
     lattice = Lattice(vector_1, vector_2)
 
     print("dyadic sum")
@@ -518,12 +521,8 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
     for j in range(3):
         ax[j][0].plot([i**2-1 for i in loop_range], [i[j].real for i in results], 'r')
         ax[j][1].plot([i**2-1 for i in loop_range], [i[j].imag for i in results], 'r--')
-
-    ax[0][2].plot([i**2-1 for i in ewald_range], [i[0].real for i in ewald_results], 'g')
-    ax[0][3].plot([i**2-1 for i in ewald_range], [i[0].imag for i in ewald_results], 'g--')
-
-    ax[1][2].plot([i**2-1 for i in ewald_range], [i[1].real for i in ewald_results], 'g')
-    ax[1][3].plot([i**2-1 for i in ewald_range], [i[1].imag for i in ewald_results], 'g--')
+        ax[j][2].plot([i**2-1 for i in ewald_range], [i[j].real for i in ewald_results], 'g--')
+        ax[j][3].plot([i**2-1 for i in ewald_range], [i[j].imag for i in ewald_results], 'g--')
 
     fig.text(0.5, 0.04, 'Number of terms in sum', ha='center')
     print("d_xx, d_xy, d_yy averages: {}".format(sum(results)/len(results)))
@@ -543,9 +542,9 @@ if __name__ == '__main__':
     a1 = np.array([0, a])
     a2 = np.array([a, 0])
     pos = np.array([0, 0])
-    q = np.array([837754, 837758040])
+    q = np.array([837758040, 837758040])
     #83775804.0957278
 
     #testComponents(a1, a2, 20, q, wp, pos, 18)
-    testDyadicSum(a1, a2, 100, q, wp, pos)
+    testDyadicSum(a1, a2, 50, q, wp, pos)
     #testLatticeSum(a1, a2, 20, q, wp, pos)
