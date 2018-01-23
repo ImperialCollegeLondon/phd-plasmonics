@@ -125,11 +125,11 @@ class Interaction:
         theta = np.angle(x + 1j*y)
         arg = k*R
 
-        xx_type = 0.25j * (k**2 *sp.special.hankel1(0,arg) - ((k**2*x**2)/(2*R**2))*(sp.special.hankel1(0, arg) - sp.special.hankel1(2, arg)) + (k*x**2/R**3) * sp.special.hankel1(1, arg) - (k/R)*sp.special.hankel1(1, arg))
+        # xx_type = 0.25j * (k**2 *sp.special.hankel1(0,arg) - ((k**2*x**2)/(2*R**2))*(sp.special.hankel1(0, arg) - sp.special.hankel1(2, arg)) + (k*x**2/R**3) * sp.special.hankel1(1, arg) - (k/R)*sp.special.hankel1(1, arg))
 
-        xy_type = 0.25j * ((k**2*x*y)/(2*R**2))*sp.special.hankel1(2, arg)
+        # xy_type = 0.25j * ((k**2*x*y)/(R**2))*sp.special.hankel1(2, arg)
 
-        yy_type = 0.25j * (k**2 * sp.special.hankel1(0,arg) - ((k**2*y**2)/(2*R**2))*(sp.special.hankel1(0, arg) - sp.special.hankel1(2, arg)) + (k*y**2/R**3) * sp.special.hankel1(1, arg) - (k/R)*sp.special.hankel1(1, arg))
+        # yy_type = 0.25j * (k**2 * sp.special.hankel1(0,arg) - ((k**2*y**2)/(2*R**2))*(sp.special.hankel1(0, arg) - sp.special.hankel1(2, arg)) + (k*y**2/R**3) * sp.special.hankel1(1, arg) - (k/R)*sp.special.hankel1(1, arg))
 
         # xx_type = 0.25j * k**2 * (
         # (y**2/R**2) * sp.special.hankel1(0,arg) +
@@ -142,13 +142,14 @@ class Interaction:
         # )
         #
         # xy_type = 0.25j * k**2 * x*y/R**2 * sp.special.hankel1(2,arg)
-        # a = 0.125j * k**2 * sp.special.hankel1(0, arg)
-        # b = 0.125j * k**2 * sp.special.hankel1(2, arg) * np.sin(2*theta)
-        # c = 0.125j * k**2 * sp.special.hankel1(2, arg) * np.cos(2*theta)
-        #
-        # xx_type = a + c
-        # xy_type = b
-        # yy_type = a - c
+
+        a = 0.125j * sp.special.hankel1(0, arg)
+        b = 0.125j * sp.special.hankel1(2, arg) * np.sin(2*theta)
+        c = 0.125j * sp.special.hankel1(2, arg) * np.cos(2*theta)
+        
+        xx_type = a + c
+        xy_type = b
+        yy_type = a - c
 
         return np.array([xx_type, xy_type, yy_type])
 
@@ -178,7 +179,7 @@ class Ewald:
     """
     Contains all the terms required in Ewald's summation.
     """
-    def __init__(self, ewald, j_max, q, lattice, neighbours, position):
+    def __init__(self, ewald, j_max, q, lattice, neighbours, position, n, n_max=0):
         self.q = q
         self.lattice = lattice
         self.bravais = lattice.genBravais(neighbours, True)
@@ -187,6 +188,7 @@ class Ewald:
         self.E = ewald
         self.j_max = j_max
         self.neighbours = neighbours
+        self.n_max = n_max
 
     def ewaldG1(self, w):
         k = w*ev
@@ -289,145 +291,141 @@ class Ewald:
         yy_comp = (self.dyadicEwaldG1(w, "yy") + self.dyadicEwaldG2(w, "yy") + k**2*self.ewaldG2(w))
         return [xx_comp, xy_comp, yy_comp]
 
-    def t0(self, w, n):
+    def t0(self, w):  # NB: only non zero for n != 0
         k = w*ev
-        if n == 0:
-            return (-1 - (1j/np.pi)*sp.special.expi(k**2/(4*self.E**2)))
-        else:
-            return 0
-
-    def t1(self, w, n):
+        return (-1 - (1j/np.pi)*sp.special.expi(k**2/(4*self.E**2)))
+    
+    def t1_lim(self, w, n):
         k = w*ev
         _sum = 0
         a1, a2 = self.lattice.getBravaisVectors()
         area = float(np.cross(a1, a2))
+        
         for G_pos in self.reciprocal:
             beta = self.q + G_pos
             beta_norm = np.linalg.norm(beta)
-
             phi = np.angle(beta[0] + 1j*beta[1])
-            _sum += (beta_norm/k)**n * 1/(k**2 - beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * np.exp(-1j*n*phi)
-        return -(4*1j**(n+1)/area) * _sum
 
-    def t2(self, w, n):
+            if n > 0 or n == 0:
+                _sum += (4j**(n+1))/area * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * (beta_norm/k)**n * np.exp(-1j*n*phi)
+            elif n < 0:
+                m = abs(n)
+                _sum += (4j**(m+1))/area * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * (beta_norm/k)**m * np.exp(-1j*m*phi)
+        if n < 0:
+            _sum = -np.conjugate(_sum)
+        return _sum
+
+    def t2_lim(self, w, n):
         k = w*ev
         _sum = 0
-        for R_pos in self.lattice.genBravais(self.neighbours, False):
+        for R_pos in self.lattice.genBravais(self.neighbours, False):  # sum excluding origin
+            R_norm = np.linalg.norm(R_pos)
+            alpha = np.angle(R_pos[0] + 1j*R_pos[1])
+            if n == 0:
+                _sum += (-1j/np.pi)*np.exp(1j*np.dot(self.q, R_pos))*self.t2_I_0(R_norm, w)
+            elif n > 0:
+                _sum +=-2**(n+1)*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos))*np.exp(-1j*n*alpha)*(R_norm/k)**n*self.t2_I_n(R_norm, w, n)
+            elif n < 0:
+                m = abs(n)
+                _sum +=-2**(m+1)*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos))*np.exp(-1j*m*alpha)*(R_norm/k)**m*self.t2_I_n(R_norm, w, m)
+        if n < 0:
+            _sum = -np.conjugate(_sum)
+        return _sum
+        
+        
+    def t1(self, w, n_max):
+        k = w*ev
+        _sum = 0
+        a1, a2 = self.lattice.getBravaisVectors()
+        area = float(np.cross(a1, a2))
+        
+        for G_pos in self.reciprocal:
+            beta = self.q + G_pos
+            beta_norm = np.linalg.norm(beta)
+            phi = np.angle(beta[0] + 1j*beta[1])
+
+            _sum += (4j/area) * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2))
+        
+        if n_max != 0:
+            for n in range(1, self.n_max):
+                for G_pos in self.reciprocal:
+                    beta = self.q + G_pos
+                    beta_norm = np.linalg.norm(beta)
+                    phi = np.angle(beta[0] + 1j*beta[1])
+                    
+                    _sum += (4j/area) * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * (((1j*beta_norm)/(k*np.exp(1j*phi)))**n + ((1j*beta_norm)/(k*np.exp(1j*phi)))**-n)
+                #print("t1: " + str(n))
+
+        return _sum
+
+
+    def t2(self, w, n_max):
+        k = w*ev
+
+        _sum = 0
+        for R_pos in self.lattice.genBravais(self.neighbours, False):  # sum excluding origin
             R_norm = np.linalg.norm(R_pos)
             alpha = np.angle(R_pos[0] + 1j*R_pos[1])
 
-            _sum += np.exp(1j*np.dot(self.q, R_pos)) * np.exp(-1j*n*alpha) * (R_norm/k)**n * self.t2IntegralFunc(R_norm, w)
-        if n < 0:
-            return -np.conjugate(-2**n*(1j/np.pi) * _sum)
+            _sum += (-1j/np.pi)*np.exp(1j*np.dot(self.q, R_pos))*self.t2_I_0(R_norm, w)
+
+        if n_max != 0:
+            for n in range(1, self.n_max):
+                for R_pos in self.lattice.genBravais(self.neighbours, False):  # sum excluding origin
+                    R_norm = np.linalg.norm(R_pos)
+                    alpha = np.angle(R_pos[0] + 1j*R_pos[1])
+
+                    _sum -= 2**(n+1) * (1j/np.pi) * (R_norm/k)**n * (2*np.cos(np.dot(self.q, R_pos)-n*alpha)) * self.t2_I_n(R_norm, w, n)
+                #print("t2: " + str(n))
+        return _sum
+
+    def memoize(f):  # speed up recurrence relation below by caching previous results
+        cache = {}
+        def decorated_function(*args):
+            if args in cache:
+                return cache[args]
+            else:
+                cache[args] = f(*args)
+                return cache[args]
+        return decorated_function 
+
+    @memoize    
+    def t2_I_n(self, dist, w, n):  # recurrence relation
+        k = w*ev
+        if n == 1:
+            return self.t2_I_1(dist, w)
+        elif n == 2:  # I_2
+            return +(self.E**(2*(n-1))/(2*(n-1)*dist**2)*np.exp(k**2/(4*self.E**2) - dist**2*self.E**2) + (self.t2_I_1(dist, w)/dist**2) - (k**2/(4*dist**2))*self.t2_I_0(dist, w))
         else:
-            return -2**n*(1j/np.pi) * _sum
+            return +(self.E**(2*(n-1)))/(2*(n-1)*dist**2)*np.exp(k**2/(4*self.E**2) - dist**2*self.E**2) + (self.t2_I_n(dist, w, n-1)/dist**2) - (k**2/(4*dist**2))*self.t2_I_n(dist, w, n-2)
 
-    def t2IntegralFunc(self, dist, w):
+    def t2_I_0(self, dist, w):  # integral I_0 of recurrence relat0.5*self.E**2*self.t2IntegralFunc(dist, w, 0)ion
+        return self.t2IntegralFunc(dist, w, 1)
+
+    def t2_I_1(self, dist, w):  # integral I_1 of recurrence relation
+        return 0.5*self.E**2*self.t2IntegralFunc(dist, w, 0)
+
+    def t2IntegralFunc(self, dist, w, j_min):
         k = w*ev
         _sum = 0
-        for j in range(0, self.j_max+1):
+        for j in range(j_min, self.j_max+1):
             _sum = 1/(np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j+1, dist**2*self.E**2)
-        return _sum
-
-    def gammaFunc(self, dist, w, n):
-        k = w*ev
-        _sum = 0
-        for j in range(0, n):
-            _sum = 1/(np.math.factorial(j)) * (k/2)**(2*j) * dist**(2*j-2*n) * sp.special.gammaincc(n-j, self.E)
-        return _sum
-
-    def t2Dyadic(self, w, n, _type):
-        k = w*ev
-        _sum = 0
-        if _type is "xx":
-            for R_pos in self.lattice.genBravais(self.neighbours, False):
-                R_norm = np.linalg.norm(R_pos)
-
-                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.t2DyadicIntegralFunc(w, R_pos, _type) + (np.exp(-R_norm**2*self.E**2)/R_norm**2)*(((4*R_pos[0]**2)/R_norm**2)*(R_norm**2*self.E**2 + 1) - 2))
-
-        elif _type is "xy":
-            for R_pos in self.lattice.genBravais(self.neighbours, False):
-                R_norm = np.linalg.norm(R_pos)
-
-                _sum += np.exp(1j * np.dot(self.q, R_pos)) * (self.t2DyadicIntegralFunc(w, R_pos, _type) + (np.exp(-R_norm**2*self.E**2) * (4*R_pos[0]*R_pos[1]/R_norm**2)*(R_norm**2*self.E**2 + 1)))
-
-        elif _type is "yy":
-            for R_pos in self.lattice.genBravais(self.neighbours, False):
-                R_norm = np.linalg.norm(R_pos)
-
-                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.t2DyadicIntegralFunc(w, R_pos, _type) + (np.exp(-R_norm**2*self.E**2)/R_norm**2)*(((4*R_pos[1]**2)/R_norm**2)*(R_norm**2*self.E**2 + 1) - 2))
-        return -0.25**n*(1j/np.pi) * _sum
-
-    def t2DyadicIntegralFunc(self, w , R_pos, _type):
-        k = w*ev
-        _sum = 0
-        R_norm = np.linalg.norm(R_pos)
-        if _type is "xx":
-            for j in range(1, self.j_max+1):
-                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*R_pos[0]**2*self.E**4*sp.special.expn(j-1, R_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, R_norm**2*self.E**2))
-
-        elif _type is "xy":
-            for j in range(1, self.j_max+1):
-                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*R_pos[0]*R_pos[1]*self.E**4*sp.special.expn(j-1, R_norm**2*self.E**2))
-
-        elif _type is "yy":
-            for j in range(1, self.j_max+1):
-                _sum += ((1./np.math.factorial(j)) * (k/(2*self.E))**(2*j)) * (4*R_pos[1]**2*self.E**4*sp.special.expn(j-1, R_norm**2*self.E**2) - 2*self.E**2*sp.special.expn(j, R_norm**2*self.E**2))
-
         return _sum
 
     def reducedLatticeSum(self, w):
         k = w*ev
+        _sum = -0.25j*(self.t0(w) + self.t1_lim(w, self.n) + self.t2_lim(w, self.n))
         
-        _sum = 0
-        for n in [0]:
-            _sum += self.t0(w, n) + self.t1(w, n) + self.t2(w, n)
-            #print("n={}, t0={}, t1={}, t2={}".format(n, self.t0(w, n), self.t1(w, n), self.t2(w, n)))
-        return (0.25j)*_sum
-
-    def dyadicReducedSumEwald(self, w):
-        k = w*ev
-        n=0
-        xx_comp = k**2 * (self.t2Dyadic(w, n, "xx") + self.reducedLatticeSum(w))
-        xy_comp = k**2 * self.t2Dyadic(w, n, "xy")
-        yy_comp = k**2 * (self.t2Dyadic(w, n, "yy") + self.reducedLatticeSum(w))
-        return [xx_comp, xy_comp, yy_comp]
-
-    def testDyadicEwaldG2(self, w, _type):
-        k = w*ev
-        _sum = 0
-        if _type is "xx":
-            for R_pos in self.lattice.genBravais(self.neighbours, False):
-                rho = R_pos
-                rho_norm =  np.linalg.norm(rho)
-                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[0]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
-
-        elif _type is "xy":
-            for R_pos in self.lattice.genBravais(self.neighbours, False):
-                rho = R_pos
-                rho_norm =  np.linalg.norm(rho)
-                _sum += np.exp(1j * np.dot(self.q, R_pos)) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2) * (4*rho[0]*rho[1]/rho_norm**2)*(rho_norm**2*self.E**2 + 1)))
-
-        elif _type is "yy":
-            for R_pos in self.lattice.genBravais(self.neighbours, False):
-                rho = R_pos
-                rho_norm =  np.linalg.norm(rho)
-                _sum += (np.exp(1j * np.dot(self.q, R_pos))) * (self.dyadicIntegralFunc(w, rho, _type) + (np.exp(-rho_norm**2*self.E**2)/rho_norm**2)*(((4*rho[1]**2)/rho_norm**2)*(rho_norm**2*self.E**2 + 1) - 2))
-        return _sum/(4*np.pi)
-
-    def testEwaldG2(self, w):
-        _sum = 0
-        for R_pos in self.lattice.genBravais(self.neighbours, False):
-            distance = np.linalg.norm(R_pos)
-            _sum += (1./(4*np.pi)) * np.exp(1j * np.dot(self.q, R_pos)) * self.integralFunc(distance, w)
         return _sum
 
-    def testDyadicSumEwald(self, w):
+    def reducedDyadicSum(self, w):
         k = w*ev
-        xx_comp = (self.dyadicEwaldG1(w, "xx") + self.testDyadicEwaldG2(w, "xx") + k**2*self.testEwaldG2(w))
-        xy_comp = (self.dyadicEwaldG1(w, "xy") + self.testDyadicEwaldG2(w, "xy"))
-        yy_comp = (self.dyadicEwaldG1(w, "yy") + self.testDyadicEwaldG2(w, "yy") + k**2*self.testEwaldG2(w))
-        return [xx_comp, xy_comp, yy_comp]
+
+        h_0 = (self.t0(w) + self.t1_lim(w, 0) + self.t2_lim(w, 0))
+        h_2 = (self.t0(w) + self.t1_lim(w, -2) + self.t2_lim(w, -2))
+        xx = -0.125j*h_0 - 0.125j*h_2
+        xy = -0.125j*h_2
+        return [xx, xy]
 
 def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
     """
@@ -439,27 +437,25 @@ def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
     lattice = Lattice(vector_1, vector_2)
 
     print("monopolar sum")
+    fig, ax = plt.subplots(2,2)
 
     if np.linalg.norm(np.array(pos)) == 0:  # if you are the origin, then exclude it from the sum
+        fig.suptitle("Scalar sum excluding origin")
         print("Sum excluding origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, False).monopolarSum(w))
             print(i**2-1)
-
-        for i in range(1, 20):
-            ewald_results.append(Ewald(2*np.pi/(a), 5, q, lattice, i, pos).reducedLatticeSum(w))
+            ewald_results.append(Ewald(2*np.pi/(a), 5, q, lattice, i, pos, 0).reducedLatticeSum(w))
         print("done")
     else:
+        fig.suptitle("Scalar sum including origin".format(pos))
         print("Sum including origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, True).monopolarSum(w))
             print(i**2-1)
-
-        for i in range(1, 20):
-            ewald_results.append(Ewald(2*np.pi/(a), 5, q, lattice, i, pos).monopolarSum(w))
+            ewald_results.append(Ewald(2*np.pi/(a), 5, q, lattice, i, pos, 0).monopolarSum(w))
         print("done")
 
-    fig, ax = plt.subplots(2,2)
     ax[0][0].set_title("Non-Ewald, Re")
     ax[1][0].set_title("Non-Ewald, Im")
     ax[0][1].set_title("Ewald, Re")
@@ -469,9 +465,9 @@ def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
     ax[1][0].plot([i**2-1 for i in loop_range], [i.imag for i in results],'r--')
     print(sum(results)/len(results))
 
-    ax[0][1].plot([i**2-1 for i in range(1, 20)], [i.real for i in ewald_results],'g')
-    ax[1][1].plot([i**2-1 for i in range(1, 20)], [i.imag for i in ewald_results],'g--')
-    print(ewald_results[18])
+    ax[0][1].plot([i**2-1 for i in loop_range], [i.real for i in ewald_results],'g')
+    ax[1][1].plot([i**2-1 for i in loop_range], [i.imag for i in ewald_results],'g--')
+    print(ewald_results[neighbour_range-1])
     fig.text(0.5, 0.04, 'Number of terms in sum', ha='center')
 
     plt.show()
@@ -484,26 +480,33 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
     results = []
     ewald_results = []
     loop_range = range(1, neighbour_range+1)
+    ewald_range = range(1,11)
     lattice = Lattice(vector_1, vector_2)
 
     print("dyadic sum")
 
+    fig, ax = plt.subplots(3,4)
     if np.linalg.norm(np.array(pos)) == 0:  # if you are the origin, then exclude it from the sum
+        fig.suptitle("Dyadic sums excluding origin")
+
         print("Sum excluding origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, False).dyadicSum(wp))
-            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos).testDyadicSumEwald(wp))
-            print(i**2-1)
+            print(i)
+        for i in ewald_range:
+            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos, 0).reducedDyadicSum(wp))
         print("done")
     else:
+        fig.suptitle("Dyadic sums including origin")
+
         print("Sum including origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, True).dyadicSum(wp))
-            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos).dyadicSumEwald(wp))
+            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos, 2).monopolarSum(wp))
             print(i**2-1)
         print("done")
 
-    fig, ax = plt.subplots(3,4)
+    
     ax[0][0].set_title("Non-Ewald, Re")
     ax[0][1].set_title("Non-Ewald, Im")
     ax[0][2].set_title("Ewald, Re")
@@ -515,11 +518,17 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
     for j in range(3):
         ax[j][0].plot([i**2-1 for i in loop_range], [i[j].real for i in results], 'r')
         ax[j][1].plot([i**2-1 for i in loop_range], [i[j].imag for i in results], 'r--')
-        ax[j][2].plot([i**2-1 for i in loop_range], [i[j].real for i in ewald_results], 'g')
-        ax[j][3].plot([i**2-1 for i in loop_range], [i[j].imag for i in ewald_results], 'g--')
+
+    ax[0][2].plot([i**2-1 for i in ewald_range], [i[0].real for i in ewald_results], 'g')
+    ax[0][3].plot([i**2-1 for i in ewald_range], [i[0].imag for i in ewald_results], 'g--')
+
+    ax[1][2].plot([i**2-1 for i in ewald_range], [i[1].real for i in ewald_results], 'g')
+    ax[1][3].plot([i**2-1 for i in ewald_range], [i[1].imag for i in ewald_results], 'g--')
+
     fig.text(0.5, 0.04, 'Number of terms in sum', ha='center')
     print("d_xx, d_xy, d_yy averages: {}".format(sum(results)/len(results)))
-    print("convergent ewald result: {}".format(ewald_results[neighbour_range-2]))
+    print((sum(results)/len(results))[0] + 1j*(sum(results)/len(results))[1])
+    print("convergent ewald result: {}".format(ewald_results[9]))
     print("finished for q={}".format(q))
 
     plt.show()
@@ -534,8 +543,9 @@ if __name__ == '__main__':
     a1 = np.array([0, a])
     a2 = np.array([a, 0])
     pos = np.array([0, 0])
-    q = np.array([83775804, 837758040])
+    q = np.array([837754, 837758040])
     #83775804.0957278
 
-    testDyadicSum(a1, a2, 20, q, wp, pos)
-    #testLatticeSum(a1, a2, 50, q, wp, pos)
+    #testComponents(a1, a2, 20, q, wp, pos, 18)
+    testDyadicSum(a1, a2, 100, q, wp, pos)
+    #testLatticeSum(a1, a2, 20, q, wp, pos)

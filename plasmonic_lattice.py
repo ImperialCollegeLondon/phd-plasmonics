@@ -571,9 +571,9 @@ class Ewald:
         return self.interactionMatrix(w) - np.identity(self.lattice.getCellSize()*2)/self.lattice.getPolarisability(w)
 
     def determinant(self, w):
-        print(w)
         w_val = w[0] + 1j*w[1]
         result = np.linalg.det(self.eigenproblem(w_val))
+        print(w_val, result)
         return [result.real, result.imag]
 
 
@@ -582,8 +582,10 @@ def determinant_solver(w, cell, resolution):
     for q in cell.getBrillouinZone(resolution):
         #array_int = Interaction(q, cell)
         array_int = Ewald(2*np.pi/cell.getSpacing(), 5, q, cell, np.array([cell.getSpacing()*0.001,cell.getSpacing()*0.001]))
-        ans = sp.optimize.root(array_int.determinant, w).x
+        ans = sp.optimize.root(array_int.determinant, w, method="lm", tol=10**-200).x
+        print("ANS"+str(ans))
         roots.append(ans)
+        
     return roots
 
 
@@ -602,9 +604,11 @@ def dirtyRootFinder(wmin, wmax, guesses, cell, resolution):
     ax[0].plot(np.arange(resolution),[(np.linalg.norm(qval)/ev) for q, qval in enumerate(cell.getBrillouinZone(resolution))], c='k', alpha=0.5)
 
     for i in range(guesses):
-        ax[0].scatter(np.arange(resolution), [results[0][i][j][0] for j in range(resolution)], c='r', s=1)
-        ax[1].scatter(np.arange(resolution), [results[0][i][j][1] for j in range(resolution)], c='b', s=1)
+        ax[0].scatter(np.arange(resolution), [max(results[0][i][j]) for j in range(resolution)], c='r', s=1)
+        ax[1].scatter(np.arange(resolution), [min(results[0][i][j]) for j in range(resolution)], c='b', s=1)
     plt.show()
+
+    return(results[0])
 
 
 if __name__ == "__main__":
@@ -623,9 +627,9 @@ if __name__ == "__main__":
 
     resolution = 60
 
-    lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=10, scaling=1.0)
+    lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=3, scaling=1.0)
     # points = lattice.getLattice('bravais', True)
     # plt.scatter([i[0] for i in points],[i[1] for i in points])
     # plt.show()
     #Extinction(lattice, resolution, wmin, wmax).plotExtinction()
-    dirtyRootFinder(wmin, wmax, 3, lattice, resolution)
+    print(dirtyRootFinder(wmin, wmax, 3, lattice, resolution))
