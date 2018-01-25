@@ -347,7 +347,7 @@ class Extinction:
         """
         print(w)
         k = w*ev
-        H_matrix = Interaction(q, self.cell).interactionMatrix(w)
+        H_matrix = Ewald(2*np.pi/self.cell.getSpacing(), 5, q, self.cell, np.array([0, 0])).interactionMatrix(w)
         for i in range(len(H_matrix[0])):
             H_matrix[i][i] = H_matrix[i][i] - 1/self.cell.getPolarisability(w)
 
@@ -555,12 +555,100 @@ class Ewald:
 
         return _sum
 
+    def memoize(f):  # speed up recurrence relation below by caching previous results
+        cache = {}
+        def decorated_function(*args):
+            if args in cache:
+                return cache[args]
+            else:
+                cache[args] = f(*args)
+                return cache[args]
+        return decorated_function 
+
+
+    # terms for sums excluding lattice: t0, t1_lim, t2_lim
+    def t0(self, w):  # NB: only non zero for n != 0
+        k = w*ev
+        return (-1 - (1j/np.pi)*sp.special.expi(k**2/(4*self.E**2)))
+    
+    @memoize
+    def t1_lim(self, w, n):
+        k = w*ev
+        _sum = 0
+        prev_sum = 0
+        a1, a2 = self.lattice.getLatticeVectors()
+        area = float(np.cross(a1, a2))
+        
+        for G_pos in self.lattice.getLattice('reciprocal', True):
+            beta = self.q + G_pos
+            beta_norm = np.linalg.norm(beta)
+            #phi = np.angle(beta[0] + 1j*beta[1])
+            phi = np.arctan2(beta[1], beta[0])
+
+            if n > 0 or n == 0:
+                _sum += (4*1j**(n+1))/area * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * (beta_norm/k)**n * np.exp(-1j*n*phi)
+            elif n < 0:
+                m = abs(n)
+                _sum += (4*1j**(m+1))/area * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * (beta_norm/k)**m * np.exp(-1j*m*phi)
+
+        if n < 0:
+            _sum = -np.conjugate(_sum)
+        return _sum
+
+    @memoize
+    def t2_lim(self, w, n):
+        k = w*ev
+        _sum = 0
+        for R_pos in self.lattice.getLattice('bravais', False):  # sum excluding origin
+            R_norm = np.linalg.norm(R_pos)
+            #alpha = np.angle(R_pos[0] + 1j*R_pos[1])
+            alpha = np.arctan2(R_pos[1], R_pos[0])
+            if n == 0:
+                _sum += (-2j/np.pi)*np.exp(1j*np.dot(self.q, R_pos))*self.t2_I_0(R_norm, w)
+            elif n > 0:
+                _sum +=-(2**(n+1))*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos)) * np.exp(-1j*n*alpha) * ((R_norm/k)**n) * self.t2_I_2(R_norm, w)
+            elif n < 0:
+                m = abs(n)
+                _sum +=-(2**(m+1))*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos))*np.exp(-1j*m*alpha)*(R_norm/k)**m*self.t2_I_2(R_norm, w)
+        if n < 0:
+            _sum = -np.conjugate(_sum)
+        return _sum
+
+    def t2_I_2(self, dist, w):
+        k = w*ev
+
+        return +(self.E**(2*(1))/(2*(1)*dist**2)*np.exp(k**2/(4*self.E**2) - dist**2*self.E**2) + (self.t2_I_1(dist, w)/(2*dist**2)) - (k**2/(8*dist**2))*self.t2_I_0(dist, w))
+
+    def t2_I_0(self, dist, w):  # integral I_0 of recurrence relat0.5*self.E**2*self.t2IntegralFunc(dist, w, 0)ion
+        return 0.5*self.t2IntegralFunc(dist, w, 1)
+
+    def t2_I_1(self, dist, w):  # integral I_1 of recurrence relation
+        return 0.5*self.E**2*self.t2IntegralFunc(dist, w, 0)
+
+    def t2IntegralFunc(self, dist, w, j_min):
+        k = w*ev
+        _sum = 0
+        for j in range(0, self.j_max+1):
+            _sum = 1/(np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j+j_min, dist**2*self.E**2)
+        return _sum
+
     def dyadicSumEwald(self, w):
         k = w*ev
-        xx_comp = (self.dyadicEwaldG1(w, "xx") + self.dyadicEwaldG2(w, "xx") + k**2*self.ewaldG2(w))
-        xy_comp = (self.dyadicEwaldG1(w, "xy") + self.dyadicEwaldG2(w, "xy"))
-        yy_comp = (self.dyadicEwaldG1(w, "yy") + self.dyadicEwaldG2(w, "yy") + k**2*self.ewaldG2(w))
+        if np.linalg.norm(self.pos) == 0:
+            h_0 = (self.t0(w) + self.t1_lim(w, 0) + self.t2_lim(w, 0))
+            #h_neg2 = (self.t1_lim(w, -2) + self.t2_lim(w, -2))  # H_2
+            h_pos2 = (self.t1_lim(w, 2) + self.t2_lim(w, 2))  # H_(-2)
+            h_neg2 = -np.conjugate(h_pos2)
+          
+            xx_comp = -k**2 * (+(1j/8)*h_0 + (1j/16)*(h_neg2+h_pos2))
+            xy_comp = -k**2 * (+(1/16)*(h_neg2-h_pos2))
+            yy_comp = -k**2 * (+(1j/8)*h_0 - (1j/16)*(h_neg2+h_pos2))
+        else:
+            xx_comp = (self.dyadicEwaldG1(w, "xx") + self.dyadicEwaldG2(w, "xx") + k**2*self.ewaldG2(w))
+            xy_comp = (self.dyadicEwaldG1(w, "xy") + self.dyadicEwaldG2(w, "xy"))
+            yy_comp = (self.dyadicEwaldG1(w, "yy") + self.dyadicEwaldG2(w, "yy") + k**2*self.ewaldG2(w))
         return np.array([[xx_comp, xy_comp],[xy_comp, yy_comp]])
+
 
     def interactionMatrix(self, w):
         #if cell_size == 1:  # No interactions within the cell, only with other cells
@@ -571,9 +659,9 @@ class Ewald:
         return self.interactionMatrix(w) - np.identity(self.lattice.getCellSize()*2)/self.lattice.getPolarisability(w)
 
     def determinant(self, w):
+        print(w)
         w_val = w[0] + 1j*w[1]
         result = np.linalg.det(self.eigenproblem(w_val))
-        print(w_val, result)
         return [result.real, result.imag]
 
 
@@ -581,11 +669,10 @@ def determinant_solver(w, cell, resolution):
     roots = []
     for q in cell.getBrillouinZone(resolution):
         #array_int = Interaction(q, cell)
-        array_int = Ewald(2*np.pi/cell.getSpacing(), 5, q, cell, np.array([cell.getSpacing()*0.001,cell.getSpacing()*0.001]))
-        ans = sp.optimize.root(array_int.determinant, w, method="lm", tol=10**-200).x
-        print("ANS"+str(ans))
+        array_int = Ewald(2*np.pi/cell.getSpacing(), 20, q, cell, np.array([0, 0]))
+        ans = sp.optimize.root(array_int.determinant, w, method="lm").x
         roots.append(ans)
-        
+        print(ans)
     return roots
 
 
@@ -601,7 +688,7 @@ def dirtyRootFinder(wmin, wmax, guesses, cell, resolution):
     results.append(pool.map(_determinant_solver, values))
     pool.close()
     fig, ax = plt.subplots(2)
-    ax[0].plot(np.arange(resolution),[(np.linalg.norm(qval)/ev) for q, qval in enumerate(cell.getBrillouinZone(resolution))], c='k', alpha=0.5)
+    ax[0].plot(np.arange(resolution),[(np.linalg.norm(qval)/ev) for q, qval in enumerate(cell.getBrillouinZone(resolution))], c='k', alpha=0.5)  # light line
 
     for i in range(guesses):
         ax[0].scatter(np.arange(resolution), [max(results[0][i][j]) for j in range(resolution)], c='r', s=1)
@@ -619,17 +706,17 @@ if __name__ == "__main__":
 
     lattice_spacing = 15.*10**-9  # lattice spacing
     particle_radius = 5.*10**-9  # particle radius
-    plasma_freq = 6.18  # plasma frequency
-    loss = 0.0  # losses
+    plasma_freq = 3.5  # plasma frequency
+    loss = 0.04  # losses
 
-    wmin = plasma_freq/np.sqrt(2) - 1.3
-    wmax = plasma_freq/np.sqrt(2) + 1.3
+    wmin = plasma_freq/np.sqrt(2) - 1
+    wmax = plasma_freq/np.sqrt(2) + 1
 
-    resolution = 60
+    resolution = 66
 
-    lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=3, scaling=1.0)
+    lattice = Square(lattice_spacing, particle_radius, plasma_freq, loss, neighbours=15, scaling=1.0)
     # points = lattice.getLattice('bravais', True)
     # plt.scatter([i[0] for i in points],[i[1] for i in points])
     # plt.show()
     #Extinction(lattice, resolution, wmin, wmax).plotExtinction()
-    print(dirtyRootFinder(wmin, wmax, 3, lattice, resolution))
+    print(dirtyRootFinder(wmin, wmax, 2, lattice, resolution))

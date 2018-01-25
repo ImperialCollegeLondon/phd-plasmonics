@@ -294,40 +294,59 @@ class Ewald:
     def t0(self, w):  # NB: only non zero for n != 0
         k = w*ev
         return (-1 - (1j/np.pi)*sp.special.expi(k**2/(4*self.E**2)))
-    
+   
+    def memoize(f):  # speed up recurrence relation below by caching previous results
+        cache = {}
+        def decorated_function(*args):
+            if args in cache:
+                return cache[args]
+            else:
+                cache[args] = f(*args)
+                return cache[args]
+        return decorated_function 
+
+    #@memoize
     def t1_lim(self, w, n):
         k = w*ev
         _sum = 0
+        
+
         a1, a2 = self.lattice.getBravaisVectors()
         area = float(np.cross(a1, a2))
         
         for G_pos in self.reciprocal:
             beta = self.q + G_pos
             beta_norm = np.linalg.norm(beta)
-            phi = np.angle(beta[0] + 1j*beta[1])
+            phi = np.arctan2(beta[1],beta[0])
+            #phi = np.angle(beta[0] + 1j*beta[1])
 
-            if n > 0 or n == 0:
-                _sum += (4j**(n+1))/area * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * (beta_norm/k)**n * np.exp(-1j*n*phi)
-            elif n < 0:
-                m = abs(n)
-                _sum += (4j**(m+1))/area * 1/(k**2-beta_norm**2) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * (beta_norm/k)**m * np.exp(-1j*m*phi)
+            if n < 0:
+                n = abs(n)
+
+            _sum += (4/area)*(1j**(n+1)) * (1/(k**2-beta_norm**2)) * np.exp((k**2 - beta_norm**2)/(4*self.E**2)) * ((beta_norm/k)**n) * np.exp(-1j*n*phi)
+            
         if n < 0:
             _sum = -np.conjugate(_sum)
         return _sum
 
+    @memoize
     def t2_lim(self, w, n):
         k = w*ev
         _sum = 0
+
         for R_pos in self.lattice.genBravais(self.neighbours, False):  # sum excluding origin
             R_norm = np.linalg.norm(R_pos)
-            alpha = np.angle(R_pos[0] + 1j*R_pos[1])
+            
+            alpha = np.arctan2(R_pos[1],R_pos[0])
+            #alpha = np.angle(R_pos[0] + 1j*R_pos[1])
             if n == 0:
-                _sum += (-1j/np.pi)*np.exp(1j*np.dot(self.q, R_pos))*self.t2_I_0(R_norm, w)
+                _sum += (-2j/np.pi)*np.exp(1j*np.dot(self.q, R_pos))*self.t2_I_0(R_norm, w)
             elif n > 0:
-                _sum +=-2**(n+1)*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos))*np.exp(-1j*n*alpha)*(R_norm/k)**n*self.t2_I_n(R_norm, w, n)
+                _sum += -(2**(n+1))*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos)) * np.exp(-1j*n*alpha) * ((R_norm/k)**n) * self.t2_I_n(R_norm, w, n)
             elif n < 0:
                 m = abs(n)
-                _sum +=-2**(m+1)*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos))*np.exp(-1j*m*alpha)*(R_norm/k)**m*self.t2_I_n(R_norm, w, m)
+                _sum +=-(2**(m+1))*(1j/np.pi) * np.exp(1j*np.dot(self.q, R_pos)) * np.exp(-1j*m*alpha) * ((R_norm/k)**m) * self.t2_I_n(R_norm, w, m)
+
         if n < 0:
             _sum = -np.conjugate(_sum)
         return _sum
@@ -379,15 +398,7 @@ class Ewald:
                 #print("t2: " + str(n))
         return _sum
 
-    def memoize(f):  # speed up recurrence relation below by caching previous results
-        cache = {}
-        def decorated_function(*args):
-            if args in cache:
-                return cache[args]
-            else:
-                cache[args] = f(*args)
-                return cache[args]
-        return decorated_function 
+    
 
     @memoize    
     def t2_I_n(self, dist, w, n):  # recurrence relation
@@ -395,21 +406,21 @@ class Ewald:
         if n == 1:
             return self.t2_I_1(dist, w)
         elif n == 2:  # I_2
-            return +(self.E**(2*(n-1))/(2*(n-1)*dist**2)*np.exp(k**2/(4*self.E**2) - dist**2*self.E**2) + (self.t2_I_1(dist, w)/dist**2) - (k**2/(4*dist**2))*self.t2_I_0(dist, w))
+            return +((self.E**2)/(2*dist**2)) * np.exp(k**2/(4*self.E**2) - dist**2*self.E**2) + (self.t2_I_1(dist, w)/dist**2) - (k**2/(4*dist**2))*self.t2_I_0(dist, w)
         else:
-            return +(self.E**(2*(n-1)))/(2*(n-1)*dist**2)*np.exp(k**2/(4*self.E**2) - dist**2*self.E**2) + (self.t2_I_n(dist, w, n-1)/dist**2) - (k**2/(4*dist**2))*self.t2_I_n(dist, w, n-2)
+            return +((self.E**(2*(n-1)))/(2*(n-1)*dist**2))*np.exp(k**2/(4*self.E**2) - dist**2*self.E**2) + (self.t2_I_n(dist, w, n-1)/dist**2) - (k**2/(4*dist**2))*self.t2_I_n(dist, w, n-2)
 
     def t2_I_0(self, dist, w):  # integral I_0 of recurrence relat0.5*self.E**2*self.t2IntegralFunc(dist, w, 0)ion
-        return self.t2IntegralFunc(dist, w, 1)
+        return 0.5*self.t2IntegralFunc(dist, w, 1)
 
     def t2_I_1(self, dist, w):  # integral I_1 of recurrence relation
         return 0.5*self.E**2*self.t2IntegralFunc(dist, w, 0)
 
-    def t2IntegralFunc(self, dist, w, j_min):
+    def t2IntegralFunc(self, dist, w, j_factor):
         k = w*ev
         _sum = 0
-        for j in range(j_min, self.j_max+1):
-            _sum = 1/(np.math.factorial(j)) * (k/(2*self.E))**(2*j) * sp.special.expn(j+1, dist**2*self.E**2)
+        for j in range(0, self.j_max+1):
+            _sum = (1/(np.math.factorial(j))) * ((k/(2*self.E))**(2*j)) * sp.special.expn(j+j_factor, dist**2*self.E**2)
         return _sum
 
     def reducedLatticeSum(self, w):
@@ -422,12 +433,12 @@ class Ewald:
         k = w*ev
 
         h_0 = (self.t0(w) + self.t1_lim(w, 0) + self.t2_lim(w, 0))
-        h_neg2 = (self.t1_lim(w, -2) + self.t2_lim(w, -2))  # H_2
+        #h_neg2 = (self.t1_lim(w, -2) + self.t2_lim(w, -2))  # H_2
         h_pos2 = (self.t1_lim(w, 2) + self.t2_lim(w, 2))  # H_(-2)
-        print(h_neg2 - h_pos2)
-        xx = -0.125j*h_0 - 0.0625j*(h_neg2+h_pos2)
-        xy = -0.0625*(h_neg2-h_pos2)
-        yy = -0.125j*h_0 + 0.0625j*(h_neg2+h_pos2)
+        h_neg2 = -np.conjugate(h_pos2)
+        xx = -(1j/8)*h_0 - (1j/16)*(h_neg2+h_pos2)
+        xy = -(1/16)*(h_neg2-h_pos2)
+        yy = -(1j/8)*h_0 + (1j/16)*(h_neg2+h_pos2)
         return [xx, xy, yy]
 
 def testLatticeSum(vector_1, vector_2, neighbour_range, q, w, pos):
@@ -483,33 +494,35 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
     results = []
     ewald_results = []
     loop_range = range(1, neighbour_range+1)
-    ewald_range = range(1,12)
+    ewald_range = range(1,22)
     lattice = Lattice(vector_1, vector_2)
 
-    print("dyadic sum")
+    #print("dyadic sum")
 
     fig, ax = plt.subplots(3,4)
-    if np.linalg.norm(np.array(pos)) == 0:  # if you are the origin, then exclude it from the sum
-        fig.suptitle("Dyadic sums excluding origin")
 
-        print("Sum excluding origin")
+    if np.linalg.norm(np.array(pos)) == 0:  # if you are the origin, then exclude it from the sum
+        #fig.suptitle("Dyadic sums excluding origin")
+
+        #print("Sum excluding origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, False).dyadicSum(wp))
             print(i)
         for i in ewald_range:
-            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos, 0).reducedDyadicSum(wp))
-        print("done")
+            ewald_results.append(Ewald(2*np.pi/a, 5, q, lattice, i, pos, 0).reducedDyadicSum(wp))
+        #print("done")
     else:
-        fig.suptitle("Dyadic sums including origin")
+        #fig.suptitle("Dyadic sums including origin")
 
-        print("Sum including origin")
+        #print("Sum including origin")
         for i in loop_range:
             results.append(Interaction(q, lattice, i, pos, True).dyadicSum(wp))
-            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos, 2).monopolarSum(wp))
+            ewald_results.append(Ewald(2*np.pi/a, 20, q, lattice, i, pos, 0).monopolarSum(wp))
             print(i**2-1)
-        print("done")
+        #print("done")
 
-    
+    avg = (sum(results)/len(results))
+
     ax[0][0].set_title("Non-Ewald, Re")
     ax[0][1].set_title("Non-Ewald, Im")
     ax[0][2].set_title("Ewald, Re")
@@ -521,15 +534,38 @@ def testDyadicSum(vector_1, vector_2, neighbour_range, q, w, pos=[0, 0]):
     for j in range(3):
         ax[j][0].plot([i**2-1 for i in loop_range], [i[j].real for i in results], 'r')
         ax[j][1].plot([i**2-1 for i in loop_range], [i[j].imag for i in results], 'r--')
-        ax[j][2].plot([i**2-1 for i in ewald_range], [i[j].real for i in ewald_results], 'g--')
+        ax[j][2].plot([i**2-1 for i in ewald_range], [i[j].real for i in ewald_results], 'g')
         ax[j][3].plot([i**2-1 for i in ewald_range], [i[j].imag for i in ewald_results], 'g--')
-
     fig.text(0.5, 0.04, 'Number of terms in sum', ha='center')
-    print("d_xx, d_xy, d_yy averages: {}".format(sum(results)/len(results)))
-    print((sum(results)/len(results))[0] + 1j*(sum(results)/len(results))[1])
-    print("convergent ewald result: {}".format(ewald_results[9]))
-    print("finished for q={}".format(q))
+    #print("d_xx, d_xy, d_yy averages: {}".format(sum(results)/len(results)))
+    #print("convergent ewald result: {}".format(ewald_results[9]))
+    #print("finished for q={}".format(q))
 
+
+    fig, ax = plt.subplots(3,2)
+
+    ax[0][0].plot([i**2-1 for i in ewald_range], [np.abs((i[0].real - avg[0].real)/avg[0].real)*100 for i in ewald_results], 'b')
+    ax[0][1].plot([i**2-1 for i in ewald_range], [np.abs((i[0].imag - avg[0].imag)/avg[0].imag)*100 for i in ewald_results], 'b--')
+
+    ax[1][0].plot([i**2-1 for i in ewald_range], [np.abs((i[1].real - avg[1].real)/avg[1].real)*100 for i in ewald_results], 'c')
+    ax[1][1].plot([i**2-1 for i in ewald_range], [np.abs((i[1].imag - avg[1].imag)/avg[1].imag)*100 for i in ewald_results], 'c--')
+
+    ax[2][0].plot([i**2-1 for i in ewald_range], [np.abs((i[2].real - avg[2].real)/avg[2].real)*100 for i in ewald_results], 'y')
+    ax[2][1].plot([i**2-1 for i in ewald_range], [np.abs((i[2].imag - avg[2].imag)/avg[2].imag)*100 for i in ewald_results], 'y--')
+
+    errors = []
+    labels = ["xx", "xy", "yy"]
+    for i in range(3):
+        errors.append(str("{} Re error: {}%, Im error: {}".format(labels[i], round((np.abs((ewald_results[-1][i].real - avg[i].real)/avg[i].real)*100), 2), round((np.abs((ewald_results[-1][i].imag - avg[i].imag)/avg[i].imag)*100), 2))))
+
+    print(errors)
+
+    #plt.show()
+    fig, ax = plt.subplots(1)
+    plt.scatter(q[0],q[1])
+    plt.plot([-np.pi/a, -np.pi/a, np.pi/a, np.pi/a, -np.pi/a],[-np.pi/a, +np.pi/a, np.pi/a, -np.pi/a, -np.pi/a], c="k")
+    plt.plot([0, np.pi/a, np.pi/a, 0],[0, np.pi/a, 0, 0], c='r')
+    fig.text(0,0, "")
     plt.show()
 
 
@@ -542,9 +578,9 @@ if __name__ == '__main__':
     a1 = np.array([0, a])
     a2 = np.array([a, 0])
     pos = np.array([0, 0])
-    q = np.array([837758040, 837758040])
+    q = np.array([0.*np.pi/a, 0.*np.pi/a])
     #83775804.0957278
 
     #testComponents(a1, a2, 20, q, wp, pos, 18)
-    testDyadicSum(a1, a2, 50, q, wp, pos)
+    testDyadicSum(a1, a2, 100, q, wp, pos)
     #testLatticeSum(a1, a2, 20, q, wp, pos)
